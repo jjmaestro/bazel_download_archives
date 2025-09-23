@@ -210,8 +210,10 @@ Then add the following to the `repo.json` file:
       }
     },
     "1.21.3": {
+      "integrity": {
         "github.com": "sha256-VbH6fHnent2TtbYxbNoatK4RNkY3MVPXokJhRzPZBg8=",
         "gitlab.com": "sha256-3w3ImvW4t/H2eMkZbUH+F1zkARSI3cIJSgJFg4ULPU4="
+      }
     }
   }
 }
