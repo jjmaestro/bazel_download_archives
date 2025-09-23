@@ -12,6 +12,8 @@ to download and extract an archive: the archive's `version`(s) and the
 ## archives
 
 <pre>
+load("@download_archives//download/archives:repository.bzl", "archives")
+
 archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>, <a href="#archives-patches">patches</a>, <a href="#archives-repo_mapping">repo_mapping</a>, <a href="#archives-sources">sources</a>, <a href="#archives-spec_syntax">spec_syntax</a>, <a href="#archives-version_scheme">version_scheme</a>, <a href="#archives-versions">versions</a>)
 </pre>
 
@@ -225,7 +227,7 @@ Then add the following to the `repo.json` file:
 Then, add the following to `MODULE.bazel`:
 
 ```starlark
-download_archives = use_repo_rule("@repo_utils//download/archives:defs.bzl", "download_archives")
+download_archives = use_repo_rule("@download_archives//download/archives:defs.bzl", "download_archives")
 
 download_archives(
     name = "wget_src",

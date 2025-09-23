@@ -1,4 +1,4 @@
-# `repo_utils`
+# `download_archives`
 
 [![pre-commit](
     ../../actions/workflows/pre-commit.yaml/badge.svg
@@ -15,7 +15,7 @@ First, make sure you are running Bazel with [Bzlmod]. Then, add the module as a
 dependency in your `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "repo_utils", version = "<VERSION>")
+bazel_dep(name = "download_archives", version = "<VERSION>")
 ```
 
 <details>
@@ -31,10 +31,10 @@ file, e.g. [`archive_override`]:
 REF = "v<VERSION>"  # NOTE: can be a repo tag or a commit hash
 
 archive_override(
-    module_name = "repo_utils",
+    module_name = "download_archives",
     integrity = "",  # TODO: copy the SRI hash that Bazel prints when fetching
-    strip_prefix = "bazel_repo_utils-%s" % REF.strip("v"),
-    urls = ["https://github.com/jjmaestro/bazel_repo_utils/archive/%s.tar.gz" % REF],
+    strip_prefix = "bazel_download_archives-%s" % REF.strip("v"),
+    urls = ["https://github.com/jjmaestro/bazel_download_archives/archive/%s.tar.gz" % REF],
 )
 ```
 <!-- markdownlint-restore -->
@@ -120,8 +120,10 @@ Then add the following to the `repo.json` file:
 
 Then, add the following to `MODULE.bazel`:
 
+<!-- markdownlint-capture -->
+<!-- markdownlint-disable MD013 -->
 ```starlark
-download_archives = use_repo_rule("@repo_utils//download/archives:defs.bzl", "download_archives")
+download_archives = use_repo_rule("@download_archives//download/archives:defs.bzl", "download_archives")
 
 download_archives(
     name = "wget_src",
@@ -134,6 +136,7 @@ download_archives(
     # },
 )
 ```
+<!-- markdownlint-restore -->
 
 ### 3. Test it
 

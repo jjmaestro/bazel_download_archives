@@ -393,6 +393,8 @@ And the final `materialized` context for e.g. version `1.1` and `source`
 ## index.new
 
 <pre>
+load("@download_archives//lib:index.bzl", "index")
+
 index.new(<a href="#index.new-repo_name">repo_name</a>, <a href="#index.new-index_json">index_json</a>, <a href="#index.new-versions">versions</a>, <a href="#index.new-sources">sources</a>, <a href="#index.new-_print">_print</a>, <a href="#index.new-_fail">_fail</a>)
 </pre>
 

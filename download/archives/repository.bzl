@@ -222,7 +222,7 @@ Then add the following to the `repo.json` file:
 Then, add the following to `MODULE.bazel`:
 
 ```starlark
-download_archives = use_repo_rule("@repo_utils//download/archives:defs.bzl", "download_archives")
+download_archives = use_repo_rule("@download_archives//download/archives:defs.bzl", "download_archives")
 
 download_archives(
     name = "wget_src",

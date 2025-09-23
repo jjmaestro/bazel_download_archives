@@ -1,5 +1,5 @@
 {
-  "homepage": "https://github.com/jjmaestro/bazel_repo_utils",
+  "homepage": "https://github.com/jjmaestro/bazel_download_archives",
   "maintainers": [
     {
       "name": "Javier Maestro",
@@ -8,7 +8,7 @@
     }
   ],
   "repository": [
-    "github:jjmaestro/bazel_repo_utils"
+    "github:jjmaestro/bazel_download_archives"
   ],
   "versions": [],
   "yanked_versions": {}

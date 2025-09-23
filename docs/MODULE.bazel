@@ -3,7 +3,7 @@ module(
     bazel_compatibility = [">=7.1.0"],
 )
 
-bazel_dep(name = "repo_utils", version = "", dev_dependency = True)
+bazel_dep(name = "download_archives", version = "", dev_dependency = True)
 bazel_dep(name = "aspect_bazel_lib", version = "2.16.0", dev_dependency = True)
 bazel_dep(name = "bazel_skylib", version = "1.7.1", dev_dependency = True)
 bazel_dep(name = "platforms", version = "0.0.11", dev_dependency = True)
@@ -12,7 +12,7 @@ bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
 bazel_dep(name = "version_utils", version = "0.1.0", dev_dependency = True)
 
 local_path_override(
-    module_name = "repo_utils",
+    module_name = "download_archives",
     path = "..",
 )
 
