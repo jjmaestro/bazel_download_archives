@@ -14,7 +14,8 @@ to download and extract an archive: the archive's `version`(s) and the
 <pre>
 load("@download_archives//download/archives:repository.bzl", "archives")
 
-archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>, <a href="#archives-patches">patches</a>, <a href="#archives-repo_mapping">repo_mapping</a>, <a href="#archives-sources">sources</a>, <a href="#archives-spec_syntax">spec_syntax</a>, <a href="#archives-version_scheme">version_scheme</a>, <a href="#archives-versions">versions</a>)
+archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>, <a href="#archives-patches">patches</a>, <a href="#archives-repo_mapping">repo_mapping</a>, <a href="#archives-sources">sources</a>, <a href="#archives-spec_syntax">spec_syntax</a>, <a href="#archives-strict_integrity">strict_integrity</a>, <a href="#archives-version_scheme">version_scheme</a>,
+         <a href="#archives-versions">versions</a>)
 </pre>
 
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
@@ -240,6 +241,10 @@ download_archives(
     # patches = {
     #    "//third-party/wget/patches:0001-1.24.5-test-patch.patch": ">=1.24.5/*",
     # },
+    # NOTE:
+    # This is needed because the archives have different integrity across the
+    # mirrors (see v1.21.3)
+    strict_integrity = False,
 )
 ```
 
@@ -261,6 +266,13 @@ the user to add the integrity to the index. And, if the archive is successfully
 downloaded, a message with the [Subresource Integrity (SRI)] (`integrity`) and
 `SHA256` hex digest will be printed so that it's easy to copy-paste one of them
 in the index.
+
+Also note that we set `strict_integrity = False` because the archives for
+version `1.21.3` have different integrity hashes across sources. With
+`strict_integrity = True`, this would cause the download to fail. Since this
+can make builds non-reproducible, the default remains `True`. The option exists
+because many artifacts share identical source code but differ in packaging or
+other details, resulting in mismatched integrities.
 
 Once installed, the `@wget_src` repo will have the following:
 
@@ -402,6 +414,7 @@ In this case, the list of targets would look like:
 | <a id="archives-repo_mapping"></a>repo_mapping |  In `WORKSPACE` context only: a dictionary from local repository name to global repository name. This allows controls over workspace dependency resolution for dependencies of this repository.<br><br>For example, an entry `"@foo": "@bar"` declares that, for any time this repository depends on `@foo` (such as a dependency on `@foo//some:target`, it should actually resolve that dependency within globally-declared `@bar` (`@bar//some:target`).<br><br>This attribute is _not_ supported in `MODULE.bazel` context (when invoking a repository rule inside a module extension's implementation function).   | <a href="https://bazel.build/rules/lib/dict">Dictionary: String -> String</a> | optional |  |
 | <a id="archives-sources"></a>sources |  Source names from which to download the archive. If none is specified, it will use all of the sources available in the repo index to try to download and extract the archive.   | List of strings | optional |  `[]`  |
 | <a id="archives-spec_syntax"></a>spec_syntax |  The syntax of the version constraints specification. The available syntaxes are those supported by `version_utils` (see `SYNTAX` in [`version_utils`' `spec` extension](https://github.com/jjmaestro/bazel_version_utils/blob/main/spec/spec.bzl)). Defaults to `SYNTAX.SIMPLE`.   | String | optional |  `"simple"`  |
+| <a id="archives-strict_integrity"></a>strict_integrity |  If `True`, all sources of a given archive version must share the same integrity hash. If they differ, the download will fail. Defaults to `True`.   | Boolean | optional |  `True`  |
 | <a id="archives-version_scheme"></a>version_scheme |  The scheme of the versions in `index` and `patches`. The available version schemes are those supported by `version_utils` (see `SCHEME` in [`version_utils`' `version` extension](https://github.com/jjmaestro/bazel_version_utils/blob/main/version/version.bzl)). Defaults to `SCHEME.SEMVER`.   | String | optional |  `"semver"`  |
 | <a id="archives-versions"></a>versions |  Versions of the archive to download. If none is specified it will download all of the versions available in the repo index.   | List of strings | optional |  `[]`  |
 

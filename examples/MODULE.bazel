@@ -20,6 +20,7 @@ download_archives(
     patches = {
         "//third-party/wget/patches:0001-1.24.5-test-patch.patch": ">=1.24.5/*",
     },
+    strict_integrity = False,
 )
 
 download_archives(

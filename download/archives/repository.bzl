@@ -235,6 +235,10 @@ download_archives(
     # patches = {
     #    "//third-party/wget/patches:0001-1.24.5-test-patch.patch": ">=1.24.5/*",
     # },
+    # NOTE:
+    # This is needed because the archives have different integrity across the
+    # mirrors (see v1.21.3)
+    strict_integrity = False,
 )
 ```
 
@@ -256,6 +260,13 @@ the user to add the integrity to the index. And, if the archive is successfully
 downloaded, a message with the [Subresource Integrity (SRI)] (`integrity`) and
 `SHA256` hex digest will be printed so that it's easy to copy-paste one of them
 in the index.
+
+Also note that we set `strict_integrity = False` because the archives for
+version `1.21.3` have different integrity hashes across sources. With
+`strict_integrity = True`, this would cause the download to fail. Since this
+can make builds non-reproducible, the default remains `True`. The option exists
+because many artifacts share identical source code but differ in packaging or
+other details, resulting in mismatched integrities.
 
 Once installed, the `@wget_src` repo will have the following:
 
@@ -609,10 +620,35 @@ def _impl(rctx, _print = print, _fail = fail):
     failed_downloads = {}
 
     for version, repos in index.repos.items():
+        if rctx.attr.strict_integrity:
+            integrities = {
+                repo.context["integrity"]: None
+                for repo in repos
+                if repo.context.get("integrity", None) != None
+            }
+
+            if len(integrities) >= 2:
+                msg = "Version {} has {} different integrities "
+                msg += "while strict_integrity=True"
+                _fail(msg.format(version, len(integrities)))
+
         for repo in repos:
             if version in repo_lock:
-                # we've already successfully downloaded one of the sources
-                continue
+                if not rctx.attr.strict_integrity:
+                    # we've already successfully downloaded one of the sources
+                    # and the integrity is the same or strict_integrity is False
+                    continue
+
+                # check for the case where the integrity of the downloaded
+                # version was None but was set for the second+ source
+                integrity_repo = repo.context.get("integrity", False)
+                integrity_down = repo_lock[version]["integrity"]
+
+                if integrity_repo and integrity_repo != integrity_down:
+                    msg = "Integrity mismatch between downloaded ('{}') and "
+                    msg += "other source(s) ('{}') while strict_integrity=True "
+                    msg += "for version {}"
+                    _fail(msg.format(repo_lock[version]["source"], repo.source, version))
 
             repo_path = "/".join([repo.version, repo.source])
             download_args = _make_download_args(repo_path, repo.context)
@@ -763,6 +799,14 @@ ATTRS = dict(
         [`version_utils`' `version`
         extension](https://github.com/jjmaestro/bazel_version_utils/blob/main/version/version.bzl)).
         Defaults to `SCHEME.SEMVER`.
+        """,
+    ),
+    strict_integrity = attr.bool(
+        default = True,
+        doc = """
+        If `True`, all sources of a given archive version must share the same
+        integrity hash. If they differ, the download will fail. Defaults to
+        `True`.
         """,
     ),
 )
