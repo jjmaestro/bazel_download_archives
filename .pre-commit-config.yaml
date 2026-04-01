@@ -81,6 +81,12 @@ repos:
         args: *args
   - repo: local
     hooks:
+      # nixfmt comes from the nix/ dev shell, pinned by nix/flake.lock
+      - id: nixfmt
+        name: nixfmt
+        entry: nixfmt
+        language: system
+        types: [nix]
       - id: bazel-test-all
         name: bazel-test-all
         entry: .pre-commit-hooks/bazel-test-all.sh

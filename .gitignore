@@ -11,3 +11,6 @@ MODULE.bazel.lock
 
 # ignore the CI cache dir
 .cache
+
+# ignore direnv
+/.direnv/

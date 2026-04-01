@@ -1,0 +1,51 @@
+{
+  description = "download_archives development environment";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  };
+
+  outputs =
+    { nixpkgs, ... }:
+    let
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+    in
+    {
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          build = import ./bazel.nix {
+            inherit pkgs;
+          };
+        in
+        {
+          default = pkgs.mkShell {
+            packages =
+              build.packages
+              ++ (with pkgs; [
+                nixfmt
+                prek
+                python314
+                uv
+              ]);
+
+            env = build.env;
+
+            shellHook = ''
+              export UV_PYTHON="$(command -v python3)"
+              export UV_NO_MANAGED_PYTHON=1
+              export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              prek install --prepare-hooks --quiet
+            '';
+          };
+        }
+      );
+    };
+}
