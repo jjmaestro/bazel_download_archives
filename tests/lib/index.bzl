@@ -316,6 +316,44 @@ def _new__v1_valid_complex_impl(ctx):
 
 new__v1_valid_complex_test = unittest.make(_new__v1_valid_complex_impl)
 
+def _new__v1_valid_multiple_sources_impl(ctx):
+    env = unittest.begin(ctx)
+
+    integrity_sri = "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8="
+    source_1 = "github.com"
+    source_2 = "gitlab.com"
+
+    index_json = """
+    {
+      "version": 1,
+      "sources": {
+        %r: {
+          "url": "https://{source}/{version}.tar.gz"
+        },
+        %r: {
+          "url": "https://{source}/{version}.tar.gz"
+        }
+      },
+      "versions": {
+        "1.0": {
+          "integrity": %r
+        }
+      }
+    }
+    """ % (source_1, source_2, integrity_sri)
+
+    index = Index.new("repo_name", index_json)
+
+    asserts.equals(env, 2, len(index.repos["1.0"]))
+
+    urls = [repo.context["url"] for repo in index.repos["1.0"]]
+    asserts.true(env, "https://%s/1.0.tar.gz" % source_1 in urls)
+    asserts.true(env, "https://%s/1.0.tar.gz" % source_2 in urls)
+
+    return unittest.end(env)
+
+new__v1_valid_multiple_sources_test = unittest.make(_new__v1_valid_multiple_sources_impl)
+
 TEST_SUITE_NAME = "lib/index"
 
 TEST_SUITE_TESTS = {
@@ -323,6 +361,7 @@ TEST_SUITE_TESTS = {
     "new/v1/empty_versions": new__v1_empty_versions_test,
     "new/v1/valid/complex": new__v1_valid_complex_test,
     "new/v1/valid/integrity": new__v1_valid_integrity_test,
+    "new/v1/valid/multiple_sources": new__v1_valid_multiple_sources_test,
     "new/v1/valid/simple": new__v1_valid_simple_test,
     "new/v1/valid/simplest": new__v1_valid_simplest_test,
     "_select_keys/dupes_in_index_key": select_keys__dupes_in_index_key_test,
