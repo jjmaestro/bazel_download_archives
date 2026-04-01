@@ -650,6 +650,8 @@ def _impl(rctx, _print = print, _fail = fail):
                     msg += "for version {}"
                     _fail(msg.format(repo_lock[version]["source"], repo.source, version))
 
+                continue
+
             repo_path = "/".join([repo.version, repo.source])
             download_args = _make_download_args(repo_path, repo.context)
 
@@ -662,7 +664,7 @@ def _impl(rctx, _print = print, _fail = fail):
             if not download.success:
                 if version not in failed_downloads:
                     failed_downloads[version] = []
-                failed_downloads[version].append(version)
+                failed_downloads[version].append(repo.source)
                 continue
 
             if "integrity" not in repo.context:
