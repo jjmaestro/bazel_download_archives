@@ -88,7 +88,7 @@ The root package also has the following:
 - `//:metadata.json`: the repo metadata.
 - `//:repo.bzl`: extension with the following constants:
   - `REPO_NAME`: The short repo name.
-  - `SOURCES`: a mapping of the downloaded `version`s to the `source` from
+  - `VERSIONS`: a mapping of the downloaded `version`s to the `source` from
     which the archive was downloaded.
   - `DEFAULT_VERSION`: the default `version` of the archive.
   - `LOCK`: a `dict` with the contents of the repo `lock.json`.
