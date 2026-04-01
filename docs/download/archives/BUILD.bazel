@@ -5,7 +5,6 @@ package(default_visibility = ["//:__subpackages__"])
 stardoc_with_diff_test(
     name = "repository",
     bzl_library_target = "@download_archives//download/archives:repository",
-    renderer = "//:renderer",
 )
 
 update_docs(name = "update")
