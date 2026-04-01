@@ -56,8 +56,8 @@ archive's `version`(s) and the `source`(s) from which to try to download the
 archive.
 
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
-repo under `@<REPO_NAME>`, downloading and extracting *one archive* from *one*
-of the sources for *each* of the archive versions in the [repo JSON index].
+repo under `@<NAME>`, downloading and extracting *one archive* from *one* of
+the sources for *each* of the archive versions in the [repo JSON index].
 
 When downloading the archive, if a source fails it will try the next one, and
 only fail if all sources are exhausted.

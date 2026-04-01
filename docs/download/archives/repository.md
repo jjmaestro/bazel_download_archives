@@ -19,7 +19,7 @@ archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>,
 </pre>
 
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
-repo under `@<REPO_NAME>`, downloading and extracting *one archive* from *one*
+repo under `@<NAME>`, downloading and extracting *one archive* from *one*
 of the sources for *each* of the archive versions in the [repo JSON index].
 
 When downloading the archive, if a source fails it will try the next one, and
@@ -32,7 +32,7 @@ To construct the arguments passed to [`rctx.download_and_extract`] it uses the
 ### Repo structure
 
 ```
-  @<REPO_NAME>/
+  @<NAME>/
    |
    |-- <VERSION>/
    |   |-- BUILD.bazel
@@ -55,14 +55,14 @@ To construct the arguments passed to [`rctx.download_and_extract`] it uses the
 
 TL;DR, the repo can be used as follows:
 
-- `@<REPO_NAME>//:<REPO_NAME>`: points to the `:files` target of the
+- `@<NAME>//:<NAME>`: points to the `:files` target of the
   `DEFAULT_VERSION`.
-- `@<REPO_NAME>//:<TARGET>`: points to the specific `TARGET` of the
+- `@<NAME>//:<TARGET>`: points to the specific `TARGET` of the
   `DEFAULT_VERSION`.
-- `@<REPO_NAME>//<VERSION>:<TARGET>`: points to the specific `TARGET` of that
+- `@<NAME>//<VERSION>:<TARGET>`: points to the specific `TARGET` of that
   `VERSION`.
 
-The `archives` repository rule creates a `@<REPO_NAME>` Bazel repo with a
+The `archives` repository rule creates a `@<NAME>` Bazel repo with a
 public `//<VERSION>` package for every version in the index.
 
 Each `//<VERSION>` package has three targets:
@@ -82,7 +82,7 @@ the `//<VERSION>/<SOURCE>` sub-packages.
 The root package `//` has three targets:
 - `:files`: to access all the files in the `DEFAULT_VERSION` package.
 - `:dir`: the path to the directory of the `DEFAULT_VERSION` package.
-- `:<REPO_NAME>`: `alias` of `:files`.
+- `:<NAME>`: `alias` of `:files`.
 
 and two constants:
 - `VERSION`: the `DEFAULT_VERSION` of the archive.
