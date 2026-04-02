@@ -3,11 +3,20 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "download.bzl",
     "index.bzl",
     "integrity.bzl",
     "schema.bzl",
     "utils.bzl",
 ])
+
+bzl_library(
+    name = "download",
+    srcs = ["download.bzl"],
+    deps = [
+        ":utils",
+    ],
+)
 
 bzl_library(
     name = "utils",

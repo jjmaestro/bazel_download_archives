@@ -10,6 +10,7 @@ bzl_library(
     name = "repository",
     srcs = ["repository.bzl"],
     deps = [
+        "//lib:download",
         "//lib:index",
         "//lib:utils",
         "@version_utils//spec",
