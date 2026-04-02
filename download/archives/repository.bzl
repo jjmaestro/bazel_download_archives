@@ -10,6 +10,7 @@ to download and extract an archive: the archive's `version`(s) and the
 load("@version_utils//spec:spec.bzl", Spec = "spec")
 load("@version_utils//version:version.bzl", Version = "version")
 load("//lib:index.bzl", Index = "index")
+load("//lib:utils.bzl", Utils = "utils")
 
 DOC = """
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
@@ -503,16 +504,6 @@ exports_files(glob(
 ))
 '''
 
-def _should_apply_patch(pattern_spec, version, source, spec_syntax, version_scheme):
-    if "/" in pattern_spec:
-        cspec, csource = pattern_spec.split("/", 1)
-    else:
-        cspec, csource = pattern_spec, "*"
-
-    spec = Spec.new(cspec, syntax = spec_syntax, version_scheme = version_scheme)
-
-    return spec.match(version) and (csource == "*" or csource == source)
-
 def _apply_patch(rctx, version, source, patch):
     patch_content = rctx.read(patch)
 
@@ -693,23 +684,19 @@ def _impl(rctx, _print = print, _fail = fail):
                 executable = False,
             )
 
-            applied_patches = []
+            matching = Utils.matching_patches(
+                rctx.attr.patches,
+                repo.version,
+                repo.source,
+                rctx.attr.spec_syntax,
+                rctx.attr.version_scheme,
+            )
 
-            for patch, pattern_spec in rctx.attr.patches.items():
-                should_apply = _should_apply_patch(
-                    pattern_spec,
-                    repo.version,
-                    repo.source,
-                    rctx.attr.spec_syntax,
-                    rctx.attr.version_scheme,
-                )
+            for patch in matching:
+                _apply_patch(rctx, repo.version, repo.source, patch)
 
-                if should_apply:
-                    _apply_patch(rctx, repo.version, repo.source, patch)
-                    applied_patches.append(str(patch))
-
-            if applied_patches:
-                repo_lock[repo.version]["patches"] = applied_patches
+            if matching:
+                repo_lock[repo.version]["patches"] = [str(p) for p in matching]
 
     failed_all_versions = []
     for version, failures in failed_downloads.items():

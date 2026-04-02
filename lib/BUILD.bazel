@@ -12,6 +12,10 @@ exports_files([
 bzl_library(
     name = "utils",
     srcs = ["utils.bzl"],
+    deps = [
+        "@version_utils//spec",
+        "@version_utils//version",
+    ],
 )
 
 bzl_library(
