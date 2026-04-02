@@ -11,7 +11,6 @@ load("@version_utils//spec:spec.bzl", Spec = "spec")
 load("@version_utils//version:version.bzl", Version = "version")
 load("//lib:download.bzl", Download = "download")
 load("//lib:index.bzl", Index = "index")
-load("//lib:utils.bzl", Utils = "utils")
 
 DOC = """
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
@@ -518,105 +517,59 @@ def _impl(rctx, _print = print, _fail = fail):
     )
 
     rctx.report_progress("{}: creating repo".format(repo_name))
+
+    repo_lock = {}
+    failed_versions = []
+
+    for version, repos in index.repos.items():
+        dl = Download.try_sources(
+            rctx,
+            repo_name,
+            version,
+            repos,
+            patches = rctx.attr.patches,
+            spec_syntax = rctx.attr.spec_syntax,
+            version_scheme = rctx.attr.version_scheme,
+            strict_integrity = rctx.attr.strict_integrity,
+            _print = _print,
+            _fail = _fail,
+        )
+
+        if not dl:
+            failed_versions.append(version)
+            continue
+
+        repo_lock[version] = dict(
+            source = dl.source,
+            url = dl.url,
+            integrity = dl.integrity,
+            patches = [str(p) for p in dl.patches] if dl.patches else None,
+        )
+
+        rctx.file(
+            "%s/%s/BUILD.bazel" % (version, dl.source),
+            BUILD_SOURCE.format(alias = dl.source, version = version),
+            executable = False,
+        )
+
+        rctx.file(
+            "%s/BUILD.bazel" % version,
+            BUILD_VERSION.format(alias = version, version = version),
+            executable = False,
+        )
+
+    if failed_versions:
+        msg = "{}: failed to download all sources for versions: {}"
+        _fail(msg.format(repo_name, failed_versions))
+
+    versions = {version: repo["source"] for version, repo in repo_lock.items()}
+    default_version = versions.keys()[0]
+
     rctx.file(
         "BUILD.bazel",
         BUILD_ROOT.format(alias = repo_name),
         executable = False,
     )
-
-    repo_lock = {}
-    failed_downloads = {}
-
-    for version, repos in index.repos.items():
-        if rctx.attr.strict_integrity:
-            Download.check_strict_integrity(repos, version, _fail)
-
-        for repo in repos:
-            if version in repo_lock:
-                if not rctx.attr.strict_integrity:
-                    # we've already successfully downloaded one of the sources
-                    # and the integrity is the same or strict_integrity is False
-                    continue
-
-                # check for the case where the integrity of the downloaded
-                # version was None but was set for the second+ source
-                integrity_repo = repo.context.get("integrity", False)
-                integrity_down = repo_lock[version]["integrity"]
-
-                if integrity_repo and integrity_repo != integrity_down:
-                    msg = "Integrity mismatch between downloaded ('{}') and "
-                    msg += "other source(s) ('{}') while strict_integrity=True "
-                    msg += "for version {}"
-                    _fail(msg.format(repo_lock[version]["source"], repo.source, version))
-
-                continue
-
-            repo_path = "/".join([repo.version, repo.source])
-            download_args = Download.make_download_args(repo_path, repo.context)
-
-            download = rctx.download_and_extract(
-                output = repo_path,
-                allow_fail = True,
-                **download_args
-            )
-
-            if not download.success:
-                if version not in failed_downloads:
-                    failed_downloads[version] = []
-                failed_downloads[version].append(repo.source)
-                continue
-
-            if "integrity" not in repo.context:
-                msg = "{}/{}: WARNING: integrity missing. "
-                msg += "Please add the integrity / sha256 to the index: {} / {}"
-                _print(msg.format(repo_name, repo_path, download.integrity, download.sha256))
-
-            repo_lock[repo.version] = dict(
-                source = repo.source,
-                url = repo.context["url"],
-                integrity = download.integrity,
-                patches = None,
-            )
-
-            alias = "{}".format(repo.version)
-            rctx.file(
-                "%s/BUILD.bazel" % repo.version,
-                BUILD_VERSION.format(alias = alias, version = repo.version),
-                executable = False,
-            )
-
-            alias = "{}".format(repo.source)
-            rctx.file(
-                "%s/BUILD.bazel" % repo_path,
-                BUILD_SOURCE.format(alias = alias, version = repo.version),
-                executable = False,
-            )
-
-            matching = Utils.matching_patches(
-                rctx.attr.patches,
-                repo.version,
-                repo.source,
-                rctx.attr.spec_syntax,
-                rctx.attr.version_scheme,
-            )
-
-            for patch in matching:
-                Download.apply_patch(rctx, repo.version, repo.source, patch)
-
-            if matching:
-                repo_lock[repo.version]["patches"] = [str(p) for p in matching]
-
-    failed_all_versions = []
-    for version, failures in failed_downloads.items():
-        if len(failures) == len(index.repos[version]):
-            failed_all_versions.append(version)
-
-    if failed_all_versions:
-        msg = "{}: failed to download all sources for versions: {}"
-        _fail(msg.format(repo_name, failed_all_versions))
-
-    versions = {version: repo["source"] for version, repo in repo_lock.items()}
-    default_version = versions.keys()[0]
 
     rctx.file(
         "repo.bzl",

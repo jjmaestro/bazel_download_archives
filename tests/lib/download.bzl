@@ -9,6 +9,54 @@ def _mock_fail(errors):
     """Returns a _fail function that appends errors to a list."""
     return lambda msg: errors.append(msg)
 
+def _mock_rctx(download_results):
+    """Create a mock rctx for testing try_sources.
+
+    Args:
+        download_results: list of struct(success, integrity, sha256), one per
+            download_and_extract call. Results are consumed in order.
+
+    Returns:
+        (rctx, files, patches, logs) where files is a dict of written files,
+        patches is a list of applied patch labels, and logs is a list of
+        printed messages.
+    """
+    files = {}
+    patches = []
+    logs = []
+    call_idx = [0]
+
+    def _download_and_extract(**_kwargs):
+        i = call_idx[0]
+        call_idx[0] = i + 1
+        return download_results[i]
+
+    def _file(path, content = "", **_kwargs):
+        files[path] = content
+
+    def _patch(label, **_kwargs):
+        patches.append(label)
+
+    return struct(
+        download_and_extract = _download_and_extract,
+        file = _file,
+        patch = _patch,
+    ), files, patches, logs
+
+def _make_repos(sources, url_tpl = "https://{source}/{version}.tar.gz", version = "1.0"):
+    """Create a list of repo structs for testing."""
+    return [
+        struct(
+            version = version,
+            source = source,
+            context = {
+                "integrity": "sha256-AAAA",
+                "url": url_tpl.format(source = source, version = version),
+            },
+        )
+        for source in sources
+    ]
+
 def _check_strict_integrity__all_same_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -240,6 +288,134 @@ apply_patch__rewrites_paths_test = unittest.make(
     _apply_patch__rewrites_paths_impl,
 )
 
+def _try_sources__first_success_wins_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_repos(["github.com", "gitlab.com"])
+    rctx, files, _, _ = _mock_rctx([
+        struct(success = True, integrity = "sha256-AAAA", sha256 = "deadbeef"),
+    ])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+    asserts.equals(env, "github.com", dl.source)
+    asserts.true(env, "1.0/source.bzl" in files)
+
+    return unittest.end(env)
+
+try_sources__first_success_wins_test = unittest.make(
+    _try_sources__first_success_wins_impl,
+)
+
+def _try_sources__failover_to_second_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_repos(["github.com", "gitlab.com"])
+    rctx, _, _, _ = _mock_rctx([
+        struct(success = False, integrity = "", sha256 = ""),
+        struct(success = True, integrity = "sha256-AAAA", sha256 = "deadbeef"),
+    ])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+    asserts.equals(env, "gitlab.com", dl.source)
+    asserts.true(env, "https://gitlab.com/1.0.tar.gz" in dl.url)
+
+    return unittest.end(env)
+
+try_sources__failover_to_second_test = unittest.make(
+    _try_sources__failover_to_second_impl,
+)
+
+def _try_sources__all_fail_returns_none_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_repos(["github.com", "gitlab.com"])
+    rctx, _, _, _ = _mock_rctx([
+        struct(success = False, integrity = "", sha256 = ""),
+        struct(success = False, integrity = "", sha256 = ""),
+    ])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+    asserts.equals(env, None, dl)
+
+    return unittest.end(env)
+
+try_sources__all_fail_returns_none_test = unittest.make(
+    _try_sources__all_fail_returns_none_impl,
+)
+
+def _try_sources__missing_integrity_warns_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = [struct(
+        version = "1.0",
+        source = "github.com",
+        context = {"url": "https://github.com/1.0.tar.gz"},
+    )]
+    rctx, _, _, logs = _mock_rctx([
+        struct(success = True, integrity = "sha256-AAAA", sha256 = "deadbeef"),
+    ])
+
+    Download.try_sources(rctx, "test", "1.0", repos, _print = Mock.print(logs))
+    asserts.equals(env, 1, len(logs))
+    asserts.true(env, "integrity missing" in logs[0])
+
+    return unittest.end(env)
+
+try_sources__missing_integrity_warns_test = unittest.make(
+    _try_sources__missing_integrity_warns_impl,
+)
+
+def _try_sources__output_path_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_repos(["github.com"])
+    rctx, _, _, _ = _mock_rctx([
+        struct(success = True, integrity = "sha256-AAAA", sha256 = "deadbeef"),
+    ])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+    asserts.equals(env, "1.0/github.com", dl.output)
+
+    return unittest.end(env)
+
+try_sources__output_path_test = unittest.make(
+    _try_sources__output_path_impl,
+)
+
+def _try_sources__strict_integrity_checked_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = [
+        struct(version = "1.0", source = "s1", context = {
+            "integrity": "sha256-AAA",
+            "url": "https://s1/1.0.tar.gz",
+        }),
+        struct(version = "1.0", source = "s2", context = {
+            "integrity": "sha256-BBB",
+            "url": "https://s2/1.0.tar.gz",
+        }),
+    ]
+    _noop = struct(success = False, integrity = "", sha256 = "")
+    rctx, _, _, _ = _mock_rctx([_noop, _noop])
+
+    errors = []
+    Download.try_sources(
+        rctx,
+        "test",
+        "1.0",
+        repos,
+        strict_integrity = True,
+        _fail = _mock_fail(errors),
+    )
+    asserts.equals(env, 1, len(errors))
+    asserts.true(env, "different integrities" in errors[0])
+
+    return unittest.end(env)
+
+try_sources__strict_integrity_checked_test = unittest.make(
+    _try_sources__strict_integrity_checked_impl,
+)
+
 TEST_SUITE_NAME = "lib/download"
 
 TEST_SUITE_TESTS = {
@@ -253,6 +429,12 @@ TEST_SUITE_TESTS = {
     "make_download_args/ignored_keys": make_download_args__ignored_keys_test,
     "make_download_args/sha256_integrity_conflict": make_download_args__sha256_integrity_conflict_test,
     "make_download_args/unknown_keys_skipped": make_download_args__unknown_keys_skipped_test,
+    "try_sources/all_fail_returns_none": try_sources__all_fail_returns_none_test,
+    "try_sources/failover_to_second": try_sources__failover_to_second_test,
+    "try_sources/first_success_wins": try_sources__first_success_wins_test,
+    "try_sources/missing_integrity_warns": try_sources__missing_integrity_warns_test,
+    "try_sources/output_path": try_sources__output_path_test,
+    "try_sources/strict_integrity_checked": try_sources__strict_integrity_checked_test,
 }
 
 test_suite = lambda: _test_suite(TEST_SUITE_NAME, TEST_SUITE_TESTS)

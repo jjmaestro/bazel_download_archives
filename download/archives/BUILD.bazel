@@ -12,7 +12,6 @@ bzl_library(
     deps = [
         "//lib:download",
         "//lib:index",
-        "//lib:utils",
         "@version_utils//spec",
     ],
 )
