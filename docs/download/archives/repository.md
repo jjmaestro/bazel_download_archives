@@ -110,12 +110,6 @@ object" with the following properties:
   - `integrity`: the SRI ([Subresource Integrity (SRI)]) of the downloaded archive.
   - `patches`: the list of patches applied to the archive after download, if any.
 
-["Patching"]: #patching
-[Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
-["materialized repo `context`"]: ../../lib/index.md#materialized-repo-context
-[`rctx.download_and_extract`]: https://bazel.build/rules/lib/builtins/repository_ctx#download_and_extract
-[repo JSON index]: ../../lib/index.md
-
 ### Selecting `versions` and `sources`
 
 Users can also override the default selection of versions and sources with the
@@ -403,6 +397,36 @@ In this case, the list of targets would look like:
 
 </details>
 
+### Per-version downloads (module extension)
+
+For repositories with many versions, use the `download_archives` module
+extension from `extensions.bzl` instead of this rule. The module extension
+creates one download repository per version, so archives are only downloaded
+when a build references a specific version:
+
+```starlark
+download = use_extension(
+    "@download_archives//download/archives:extensions.bzl",
+    "download_archives",
+)
+
+download.archives(
+    name = "my_src",
+    index = "//third-party:repo.json",
+)
+
+use_repo(download, "my_src")
+```
+
+Building `@my_src//18.1:files` downloads only version 18.1, not all versions
+in the index.
+
+["Patching"]: #patching
+[Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
+["materialized repo `context`"]: ../../lib/index.md#materialized-repo-context
+[`rctx.download_and_extract`]: https://bazel.build/rules/lib/builtins/repository_ctx#download_and_extract
+[repo JSON index]: ../../lib/index.md
+
 **ATTRIBUTES**
 
 
@@ -410,7 +434,7 @@ In this case, the list of targets would look like:
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="archives-name"></a>name |  A unique name for this repository.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
 | <a id="archives-index"></a>index |  Label of the repo JSON index file.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
-| <a id="archives-lazy"></a>lazy |  Internal. When True, creates index-only repos with stub BUILD files that alias to per-version download repositories instead of downloading archives eagerly. The per-version repos must be created separately.   | Boolean | optional |  `False`  |
+| <a id="archives-lazy"></a>lazy |  Internal. When True, creates index-only repos with stub BUILD files that alias to per-version download repositories instead of downloading archives eagerly. Used by the `download_archives` module extension, should not be set directly.   | Boolean | optional |  `False`  |
 | <a id="archives-patches"></a>patches |  Diff files to apply as patches at the root of the downloaded archive. The `dict` values represent "patch specs" in the `<VERSION_SPEC>/<SOURCE>` format, and determine when patches apply to the downloaded archive. Patches must be in standard [unified diff format], created from the root of the archive. All patches are applied from the root of the archive with `patch -p1`. For more details, see ["Patching"].   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: Label -> String</a> | optional |  `{}`  |
 | <a id="archives-repo_mapping"></a>repo_mapping |  In `WORKSPACE` context only: a dictionary from local repository name to global repository name. This allows controls over workspace dependency resolution for dependencies of this repository.<br><br>For example, an entry `"@foo": "@bar"` declares that, for any time this repository depends on `@foo` (such as a dependency on `@foo//some:target`, it should actually resolve that dependency within globally-declared `@bar` (`@bar//some:target`).<br><br>This attribute is _not_ supported in `MODULE.bazel` context (when invoking a repository rule inside a module extension's implementation function).   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  |
 | <a id="archives-sources"></a>sources |  Source names from which to download the archive. If none, all sources from the index are tried in order.   | List of strings | optional |  `[]`  |

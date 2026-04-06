@@ -17,6 +17,7 @@ download_archives = use_repo_rule("@download_archives//download/archives:defs.bz
 download_archives(
     name = "wget_src",
     index = "//third-party/wget:repo.json",
+    lazy = False,
     patches = {
         "//third-party/wget/patches:0001-1.24.5-test-patch.patch": ">=1.24.5/*",
     },
@@ -26,6 +27,7 @@ download_archives(
 download_archives(
     name = "pg_src",
     index = "//third-party/postgres:repo.json",
+    lazy = False,
     patches = {
         "//third-party/postgres/patches:0001-16.0-fix-pgflex.patch": "<17.0",
     },
@@ -45,6 +47,20 @@ download_archives(
 download_archives(
     name = "wget_lazy-1.24.5",
     index = "//third-party/wget:repo.json",
+    lazy = False,
     strict_integrity = False,
     versions = ["1.24.5"],
 )
+
+# module extension: creates index + per-version repos automatically
+download = use_extension(
+    "@download_archives//download/archives:extensions.bzl",
+    "download_archives",
+)
+download.archives(
+    name = "wget_ext",
+    index = "//third-party/wget:repo.json",
+    strict_integrity = False,
+    versions = ["1.24.5"],
+)
+use_repo(download, "wget_ext")

@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "defs.bzl",
+    "extensions.bzl",
 ])
 
 bzl_library(
@@ -22,5 +23,16 @@ bzl_library(
     srcs = ["defs.bzl"],
     deps = [
         ":repository",
+    ],
+)
+
+bzl_library(
+    name = "extensions",
+    srcs = ["extensions.bzl"],
+    deps = [
+        ":repository",
+        "//lib:index",
+        "@version_utils//spec",
+        "@version_utils//version",
     ],
 )

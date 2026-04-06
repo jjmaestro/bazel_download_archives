@@ -2,11 +2,13 @@
 
 ## `download/`
 
-* [`download/archives`]
+* [`download/archives` repository rule]
+* [`download/archives` module extension]
 
 ## `lib/`
 
 * [`lib/index`]
 
-[`download/archives`]: download/archives/repository.md
+[`download/archives` repository rule]: download/archives/repository.md
+[`download/archives` module extension]: download/archives/extensions.md
 [`lib/index`]: lib/index.md

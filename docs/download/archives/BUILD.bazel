@@ -7,4 +7,9 @@ stardoc_with_diff_test(
     bzl_library_target = "@download_archives//download/archives:repository",
 )
 
+stardoc_with_diff_test(
+    name = "extensions",
+    bzl_library_target = "@download_archives//download/archives:extensions",
+)
+
 update_docs(name = "update")
