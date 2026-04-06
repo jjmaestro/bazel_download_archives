@@ -14,8 +14,8 @@ to download and extract an archive: the archive's `version`(s) and the
 <pre>
 load("@download_archives//download/archives:repository.bzl", "archives")
 
-archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>, <a href="#archives-patches">patches</a>, <a href="#archives-repo_mapping">repo_mapping</a>, <a href="#archives-sources">sources</a>, <a href="#archives-spec_syntax">spec_syntax</a>, <a href="#archives-strict_integrity">strict_integrity</a>, <a href="#archives-version_scheme">version_scheme</a>,
-         <a href="#archives-versions">versions</a>)
+archives(<a href="#archives-name">name</a>, <a href="#archives-index">index</a>, <a href="#archives-lazy">lazy</a>, <a href="#archives-patches">patches</a>, <a href="#archives-repo_mapping">repo_mapping</a>, <a href="#archives-sources">sources</a>, <a href="#archives-spec_syntax">spec_syntax</a>, <a href="#archives-strict_integrity">strict_integrity</a>,
+         <a href="#archives-version_scheme">version_scheme</a>, <a href="#archives-versions">versions</a>)
 </pre>
 
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
@@ -166,7 +166,7 @@ Finally, to simplify patch maintenance, it's good practice to keep a dedicated
 generate the list of patches using [`git format-patch`].
 
 [unified diff format]: https://en.wikipedia.org/wiki/Diff#Unified_format
-+[`version_utils` `spec` extension]: https://github.com/jjmaestro/bazel_version_utils/blob/main/docs/specs/spec.md
+[`version_utils` `spec` extension]: https://github.com/jjmaestro/bazel_version_utils/blob/main/docs/specs/spec.md
 [`git format-patch`]: https://git-scm.com/docs/git-format-patch
 
 ### Usage:
@@ -409,10 +409,11 @@ In this case, the list of targets would look like:
 | Name  | Description | Type | Mandatory | Default |
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="archives-name"></a>name |  A unique name for this repository.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
-| <a id="archives-index"></a>index |  Label of the repo JSON index   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="archives-index"></a>index |  Label of the repo JSON index file.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="archives-lazy"></a>lazy |  Internal. When True, creates index-only repos with stub BUILD files that alias to per-version download repositories instead of downloading archives eagerly. The per-version repos must be created separately.   | Boolean | optional |  `False`  |
 | <a id="archives-patches"></a>patches |  Diff files to apply as patches at the root of the downloaded archive. The `dict` values represent "patch specs" in the `<VERSION_SPEC>/<SOURCE>` format, and determine when patches apply to the downloaded archive. Patches must be in standard [unified diff format], created from the root of the archive. All patches are applied from the root of the archive with `patch -p1`. For more details, see ["Patching"].   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: Label -> String</a> | optional |  `{}`  |
 | <a id="archives-repo_mapping"></a>repo_mapping |  In `WORKSPACE` context only: a dictionary from local repository name to global repository name. This allows controls over workspace dependency resolution for dependencies of this repository.<br><br>For example, an entry `"@foo": "@bar"` declares that, for any time this repository depends on `@foo` (such as a dependency on `@foo//some:target`, it should actually resolve that dependency within globally-declared `@bar` (`@bar//some:target`).<br><br>This attribute is _not_ supported in `MODULE.bazel` context (when invoking a repository rule inside a module extension's implementation function).   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  |
-| <a id="archives-sources"></a>sources |  Source names from which to download the archive. If none is specified, it will use all of the sources available in the repo index to try to download and extract the archive.   | List of strings | optional |  `[]`  |
+| <a id="archives-sources"></a>sources |  Source names from which to download the archive. If none, all sources from the index are tried in order.   | List of strings | optional |  `[]`  |
 | <a id="archives-spec_syntax"></a>spec_syntax |  The syntax of the version constraints specification. The available syntaxes are those supported by `version_utils` (see `SYNTAX` in [`version_utils`' `spec` extension](https://github.com/jjmaestro/bazel_version_utils/blob/main/spec/spec.bzl)). Defaults to `SYNTAX.SIMPLE`.   | String | optional |  `"simple"`  |
 | <a id="archives-strict_integrity"></a>strict_integrity |  If `True`, all sources of a given archive version must share the same integrity hash. If they differ, the download will fail. Defaults to `True`.   | Boolean | optional |  `True`  |
 | <a id="archives-version_scheme"></a>version_scheme |  The scheme of the versions in `index` and `patches`. The available version schemes are those supported by `version_utils` (see `SCHEME` in [`version_utils`' `version` extension](https://github.com/jjmaestro/bazel_version_utils/blob/main/version/version.bzl)). Defaults to `SCHEME.SEMVER`.   | String | optional |  `"semver"`  |

@@ -1,6 +1,9 @@
 load(":pg_src.bzl", pg_src_suite = "examples_suite")
+load(":wget_lazy.bzl", wget_lazy_suite = "examples_suite")
 load(":wget_src.bzl", wget_src_suite = "examples_suite")
 
 pg_src_suite()
+
+wget_lazy_suite()
 
 wget_src_suite()

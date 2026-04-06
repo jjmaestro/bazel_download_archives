@@ -13,6 +13,7 @@ bzl_library(
         "//lib:download",
         "//lib:index",
         "@version_utils//spec",
+        "@version_utils//version",
     ],
 )
 

@@ -32,3 +32,19 @@ download_archives(
     version_scheme = "pgver",
     versions = ["16.0"],
 )
+
+# lazy mode: index repo + per-version download repo (manual wiring)
+download_archives(
+    name = "wget_lazy",
+    index = "//third-party/wget:repo.json",
+    lazy = True,
+    strict_integrity = False,
+    versions = ["1.24.5"],
+)
+
+download_archives(
+    name = "wget_lazy-1.24.5",
+    index = "//third-party/wget:repo.json",
+    strict_integrity = False,
+    versions = ["1.24.5"],
+)
