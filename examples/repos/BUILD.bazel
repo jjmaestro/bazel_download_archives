@@ -1,12 +1,42 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load(":pg_src.bzl", pg_src_suite = "examples_suite")
+load(":rust_toolchain.bzl", rust_toolchain_suite = "examples_suite")
 load(":wget_ext.bzl", wget_ext_suite = "examples_suite")
 load(":wget_lazy.bzl", wget_lazy_suite = "examples_suite")
 load(":wget_src.bzl", wget_src_suite = "examples_suite")
 
 pg_src_suite()
 
+rust_toolchain_suite()
+
 wget_ext_suite()
 
 wget_lazy_suite()
 
 wget_src_suite()
+
+# The rust index has `"output": "{triple}"`, so each triple is a target of its
+# own with the `cargo` and `rustfmt` archives of that triple merged into it:
+# one usable toolchain prefix per triple, and no files from the other triple.
+genrule(
+    name = "rust_toolchain_x86_64",
+    srcs = ["@rust_toolchain//1.97.1:x86_64-unknown-linux-gnu"],
+    outs = ["rust_toolchain_x86_64.txt"],
+    cmd = """
+set -euo pipefail
+
+for src in $(SRCS); do
+    echo "$${src##*/x86_64-unknown-linux-gnu/}"
+done | sort > $@
+
+grep -qx "bin/cargo" $@
+grep -qx "bin/rustfmt" $@
+
+! grep -q "aarch64" $@
+""",
+)
+
+build_test(
+    name = "rust_toolchain_x86_64_test",
+    targets = [":rust_toolchain_x86_64"],
+)

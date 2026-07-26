@@ -354,13 +354,151 @@ def _new__v1_valid_multiple_sources_impl(ctx):
 
 new__v1_valid_multiple_sources_test = unittest.make(_new__v1_valid_multiple_sources_impl)
 
+_MATRIX_INDEX_JSON = """
+{
+  "version": 1,
+  "sources": {
+    "static.example.org": {
+      "url": "https://{source}/dist/{component}-{version}-{triple}.tar.xz",
+      "strip_prefix": "{component}-{version}-{triple}/{piece}"
+    }
+  },
+  "matrix": [
+    {
+      "key": "triple",
+      "values": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+    },
+    {
+      "key": "component",
+      "values": {
+        "cargo": {"piece": "cargo"},
+        "rust-std": {"piece": "rust-std-{triple}"}
+      }
+    }
+  ],
+  "output": "{triple}",
+  "versions": {
+    "1.0.0": {
+      "x86_64-unknown-linux-gnu": {
+        "cargo": "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8=",
+        "rust-std": "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8="
+      },
+      "aarch64-unknown-linux-gnu": {
+        "cargo": "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8=",
+        "rust-std": "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8="
+      }
+    }
+  }
+}
+"""
+
+def _new__v1_valid_matrix_impl(ctx):
+    env = unittest.begin(ctx)
+
+    prints = []
+
+    index = Index.new("repo_name", _MATRIX_INDEX_JSON, _print = Mock.print(prints))
+
+    # every integrity is in the index, so there are no warnings
+    asserts.equals(env, [], prints)
+
+    repo = index.repos["1.0.0"][0]
+
+    # one context per combination, in matrix order
+    asserts.equals(env, 4, len(repo.contexts))
+
+    # `context` is the first combination's, for the consumers that only need
+    # one representative context
+    asserts.equals(env, repo.contexts[0].context, repo.context)
+
+    urls = [c.context["url"] for c in repo.contexts]
+    asserts.equals(env, [
+        "https://static.example.org/dist/cargo-1.0.0-x86_64-unknown-linux-gnu.tar.xz",
+        "https://static.example.org/dist/rust-std-1.0.0-x86_64-unknown-linux-gnu.tar.xz",
+        "https://static.example.org/dist/cargo-1.0.0-aarch64-unknown-linux-gnu.tar.xz",
+        "https://static.example.org/dist/rust-std-1.0.0-aarch64-unknown-linux-gnu.tar.xz",
+    ], urls)
+
+    # `output` partitions the extracted tree by triple: the two components of
+    # a triple merge into the same subpath
+    asserts.equals(env, [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ], [c.output for c in repo.contexts])
+
+    # an axis property is materialized with the axes before it: `rust-std`'s
+    # `piece` references `triple`, the first axis
+    asserts.equals(env, [
+        "cargo-1.0.0-x86_64-unknown-linux-gnu/cargo",
+        "rust-std-1.0.0-x86_64-unknown-linux-gnu/rust-std-x86_64-unknown-linux-gnu",
+        "cargo-1.0.0-aarch64-unknown-linux-gnu/cargo",
+        "rust-std-1.0.0-aarch64-unknown-linux-gnu/rust-std-aarch64-unknown-linux-gnu",
+    ], [c.context["strip_prefix"] for c in repo.contexts])
+
+    # the nested integrity is looked up per combination
+    sha256 = "deadb33fdeadb33fdeadb33fdeadb33fdeadb33fdeadb33fdeadb33fdeadb33f"
+    for context in [c.context for c in repo.contexts]:
+        asserts.equals(env, sha256, context["sha256"])
+
+    return unittest.end(env)
+
+new__v1_valid_matrix_test = unittest.make(_new__v1_valid_matrix_impl)
+
+_MATRIX_INDEX_MISSING_INTEGRITY_JSON = """
+{
+  "version": 1,
+  "sources": {
+    "static.example.org": {
+      "url": "https://{source}/dist/{component}-{version}-{triple}.tar.xz"
+    }
+  },
+  "matrix": [
+    {"key": "triple", "values": ["x86_64-unknown-linux-gnu"]},
+    {"key": "component", "values": ["cargo", "rust-std"]}
+  ],
+  "output": "{triple}",
+  "versions": {
+    "1.0.0": {
+      "x86_64-unknown-linux-gnu": {
+        "rust-std": "sha256-3q2zP96tsz/erbM/3q2zP96tsz/erbM/3q2zP96tsz8="
+      }
+    }
+  }
+}
+"""
+
+def _new__v1_matrix_missing_integrity_warns_impl(ctx):
+    env = unittest.begin(ctx)
+
+    index_json = _MATRIX_INDEX_MISSING_INTEGRITY_JSON
+
+    prints = []
+
+    Index.new("repo_name", index_json, _print = Mock.print(prints))
+
+    asserts.equals(env, 1, len(prints))
+    asserts.true(env, "missing integrity/sha256 for:" in prints[0])
+
+    # the warning names the combination and the source that are missing
+    asserts.true(env, "x86_64-unknown-linux-gnu/cargo/static.example.org" in prints[0])
+
+    return unittest.end(env)
+
+new__v1_matrix_missing_integrity_warns_test = unittest.make(
+    _new__v1_matrix_missing_integrity_warns_impl,
+)
+
 TEST_SUITE_NAME = "lib/index"
 
 TEST_SUITE_TESTS = {
     "new/invalid_version": new__invalid_version_test,
     "new/v1/empty_versions": new__v1_empty_versions_test,
+    "new/v1/matrix/missing_integrity_warns": new__v1_matrix_missing_integrity_warns_test,
     "new/v1/valid/complex": new__v1_valid_complex_test,
     "new/v1/valid/integrity": new__v1_valid_integrity_test,
+    "new/v1/valid/matrix": new__v1_valid_matrix_test,
     "new/v1/valid/multiple_sources": new__v1_valid_multiple_sources_test,
     "new/v1/valid/simple": new__v1_valid_simple_test,
     "new/v1/valid/simplest": new__v1_valid_simplest_test,

@@ -30,6 +30,30 @@ def _get_dupes__dupes_impl(ctx):
 
 get_dupes__dupes_test = unittest.make(_get_dupes__dupes_impl)
 
+def _dedupe__no_dupes_impl(ctx):
+    env = unittest.begin(ctx)
+
+    values = ["c", "a", "b"]
+    res = Utils.dedupe(values)
+    asserts.equals(env, ["c", "a", "b"], res)
+
+    return unittest.end(env)
+
+dedupe__no_dupes_test = unittest.make(_dedupe__no_dupes_impl)
+
+def _dedupe__keeps_first_occurrences_impl(ctx):
+    env = unittest.begin(ctx)
+
+    values = ["c", "a", "c", "b", "a"]
+    res = Utils.dedupe(values)
+    asserts.equals(env, ["c", "a", "b"], res)
+
+    return unittest.end(env)
+
+dedupe__keeps_first_occurrences_test = unittest.make(
+    _dedupe__keeps_first_occurrences_impl,
+)
+
 def _replace_in_place__missing_key_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -171,6 +195,8 @@ matching_patches__range_with_source_test = unittest.make(_matching_patches__rang
 TEST_SUITE_NAME = "lib/utils"
 
 TEST_SUITE_TESTS = {
+    "dedupe/keeps_first_occurrences": dedupe__keeps_first_occurrences_test,
+    "dedupe/no_dupes": dedupe__no_dupes_test,
     "get_dupes/dupes": get_dupes__dupes_test,
     "get_dupes/no_dupes": get_dupes__no_dupes_test,
     "matching_patches/exact_version": matching_patches__exact_version_test,

@@ -17,6 +17,10 @@ The index JSON object has the following properties:
   be expanded to a `dict` of `version`s mapped to empty `version` contexts.
 - `sources` (`dict[source, source_context]`): maps `source` names to [URL
   `source` context]s.
+- `matrix` (`list[axis]`, optional): expands each `version` into a *combination
+  of archives* instead of a single one. See [`matrix`].
+- `output` (`str`, optional): template that decides the subpath each `matrix`
+  combination is extracted into. See [`output`: merging and partitioning].
 - `metadata` (`dict[any, any]`): free-form "metadata map", useful to add
   information about the archive that we want to have available in the repo
   (e.g. requirements, version compatibility, external dependencies, etc).
@@ -36,6 +40,10 @@ Each `repo` `struct` has the following properties:
   - `source`: the `source` name
   - `context`: the [`materialized` repo context] which will have, at the very
     least, the `url` from which to download the archive.
+  - `contexts`: the list of `struct(output, context)`, one per [`matrix`]
+    combination, each with the combination's `materialized` repo `context` and
+    its materialized `output` subpath. Without a `matrix` this is a
+    single-element list holding `context` and an empty `output`.
 
 ## Contexts
 
@@ -184,6 +192,117 @@ Note that *all* of the property values in the URL `source` context can be
 templated using string replacements. See [`materialized` repo context] for more
 details.
 
+
+## `matrix`
+
+Some archives are not published as *one* file per version but as a *set* of
+files. E.g. a toolchain publishes one archive per (target triple, component)
+and all of them together make up the toolchain.
+
+The `matrix` describes that set as an ordered list of *axes*:
+
+```json
+{
+  "version": 1,
+  "sources": {
+    "static.rust-lang.org": {
+      "url": "https://{source}/dist/{component}-{version}-{triple}.tar.xz",
+      "strip_prefix": "{component}-{version}-{triple}/{piece}"
+    }
+  },
+  "matrix": [
+    {
+      "key": "triple",
+      "values": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+    },
+    {
+      "key": "component",
+      "values": {
+        "cargo": {"piece": "cargo"},
+        "rust-std": {"piece": "rust-std-{triple}"},
+        "rustfmt": {"piece": "rustfmt-preview"}
+      }
+    }
+  ],
+  "output": "{triple}"
+}
+```
+
+Each axis is an object with two mandatory properties:
+
+- `key` (`str`): the name of the context property that the axis sets. The value
+  selected for the axis is available for string replacement as `{<key>}`.
+- `values` (`list[str] | dict[str, dict]`): the values of the axis. The `dict`
+  form maps each value to *extra context properties* that apply only when that
+  value is selected (`piece`, above, which is the sub-directory to strip
+  because it differs per component).
+
+The archive is downloaded once *per combination*, i.e. the cartesian product of
+all the axes, in matrix order and with the last axis varying fastest. Without a
+`matrix` there's exactly one combination with no properties, which is the
+pre-`matrix` behavior.
+
+### `matrix` combinations and the repo `context`
+
+The properties of a combination are added to the [`materialized` repo context]
+right after the [`default` context] and before the [`version` context] and the
+[URL `source` context], so both of those can reference them (e.g. the `url` and
+the `strip_prefix` above).
+
+They are materialized in axis order, so an axis can reference the axes before
+it: `rust-std`'s `piece` is `"rust-std-{triple}"` because `triple` is the first
+axis.
+
+### `matrix` integrity
+
+With a `matrix` there is one archive, and thus one integrity, per combination,
+so the [`version` context] nests the integrities by axis value, in matrix
+order:
+
+```json
+{
+  (...)
+  "versions": {
+    "1.97.1": {
+      "x86_64-unknown-linux-gnu": {
+        "cargo": "sha256-4b5Xkw2Cfk73/RSNy0jgUv/AqIsGpKKO9EhIOqvsG2E=",
+        "rust-std": "sha256-HB5wSugBJrfeNPcuooJffQFzbewgcy5aiibz3Ek5s74="
+      }
+    }
+  }
+}
+```
+
+As with the non-`matrix` [`version` context], the leaf is either the integrity
+itself ("global", the same archive in all sources) or a `dict` that maps each
+`source` to its integrity ("per-source").
+
+### `output`: merging and partitioning
+
+`output` is a template, materialized with each combination's context, that
+decides the subpath *under the archive's `<VERSION>/<SOURCE>` directory* into
+which that combination is extracted.
+
+Combinations that render the *same* `output` are extracted on top of each other
+and *merge* into a single tree; combinations that render *different* `output`s
+*partition* the tree. In the example above, `"output": "{triple}"` merges all
+the components of a triple into one usable toolchain prefix while keeping the
+two triples apart.
+
+Every rendered `output` also gets its own `filegroup` in the generated repo, so
+consumers can depend on one partition instead of on the whole tree.
+
+When `output` is not set, all combinations extract into the same directory,
+i.e. everything merges.
+
+Finally, note that a `source` is only used if *all* of its combinations
+download successfully. Otherwise, the next source is tried. This keeps a
+partial mirror from leaving behind a half-materialized tree.
+
+TODO: combinations are always downloaded eagerly, all of them, even in the
+per-version lazy mode of the `download_archives` module extension. Consider a
+hub-and-spoke layout with one download repo per combination so that e.g. only
+the triple that's actually built gets downloaded.
 
 ### Special context properties
 
@@ -384,15 +503,25 @@ And the final `materialized` context for e.g. version `1.1` and `source`
 [`default` context]: #default-context
 [`version` context]: #version-context
 [URL `source` context]: #url-source-context
+[`matrix`]: #matrix
+[`output`: merging and partitioning]: #output-merging-and-partitioning
 [Special context properties]: #special-context-properties
 [Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
 """
 
 load(":integrity.bzl", Integrity = "integrity")
+load(":matrix.bzl", Matrix = "matrix")
 load(":schema.bzl", Schema = "schema")
 load(":utils.bzl", Utils = "utils")
 
-def _materialize_context_v1(repo_name, version_name, version, source_name, source):
+def _materialize_context_v1(
+        repo_name,
+        version_name,
+        version,
+        source_name,
+        source,
+        matrix = [],
+        combo = {}):
     # First, we build the context that we are going to use to materialize all
     # of the templated strings in the URL sources
 
@@ -402,32 +531,49 @@ def _materialize_context_v1(repo_name, version_name, version, source_name, sourc
         source = source_name,
     )
 
+    # A matrix combination's properties come next: they are known before the
+    # source properties (they select WHICH archive a source points at), so the
+    # source's `url` / `strip_prefix` can reference them. Their own values are
+    # materialized below with everything else, in axis order, so a later axis
+    # can reference an earlier one.
+
+    context |= combo
+
     # Then we add all of the "versions" properties that match the source_name
-    # and all of the source properties
+    # and all of the source properties. With a matrix, the top-level keys of
+    # the version context that are values of its first axis are the nested
+    # integrities, not properties, so they are skipped here (see below).
+
+    axis_values = Matrix.axis_values(matrix)
 
     context |= {
         property: v
         for property, values in version.items()
+        if property not in axis_values
         for k, v in values.items()
         if k == source_name
-    }
-
-    context |= {
-        property: v
-        for property, v in source.items()
     }
 
     # The integrity properties are special, it's processed into an Integrity
     # object so that we can always expand it and add to the context the
     # integrity algo, hex digest and SRI.
 
-    integrity_property = "sha256" if "sha256" in version else "integrity"
-    integrity = version.get(integrity_property, {}).get(source_name, None)
+    if matrix:
+        # With a matrix there's one integrity per combination, nested by axis
+        # value, so it isn't a property of the version context and there's no
+        # position of its own to expand into: it's appended here, after the
+        # version properties and before the source ones, which is where the
+        # non-matrix expansion lands too.
+        integrity = Matrix.integrity(version, source_name, matrix, combo)
+        integrity_property = None
+    else:
+        integrity_property = "sha256" if "sha256" in version else "integrity"
+        integrity = version.get(integrity_property, {}).get(source_name, None)
 
     if integrity:
         integrity = Integrity.new(integrity)
 
-        replacement = dict(
+        expansion = dict(
             integrity = integrity.sri,
             integrity_algo = integrity.algo,
             integrity_sri = integrity.sri,
@@ -435,18 +581,30 @@ def _materialize_context_v1(repo_name, version_name, version, source_name, sourc
         )
 
         if integrity.is_sha256:
-            replacement["sha256"] = integrity.hex_digest
+            expansion["sha256"] = integrity.hex_digest
 
-        # NOTE:
-        # These are INSERTED all in the position of the integrity property
-        # because the order matters for materialization.
-        context = Utils.replace_in_place(context, integrity_property, replacement)
+        if integrity_property:
+            # NOTE:
+            # These are INSERTED all in the position of the integrity property
+            # because the order matters for materialization.
+            context = Utils.replace_in_place(
+                context,
+                integrity_property,
+                expansion,
+            )
+        else:
+            context |= expansion
+
+    context |= {
+        property: v
+        for property, v in source.items()
+    }
 
     # Finally, we materialize the context. After materializing each property,
     # it's added to the context so subsequent materializations have it
     # available for string substitution.
 
-    for key, value in source.items():
+    for key, value in list(combo.items()) + list(source.items()):
         if type(value) == "string":
             materialized = value.format(**context)
         elif type(value) in ("list", "tuple"):
@@ -526,20 +684,54 @@ def _from_json_v1(repo_name, index, versions, sources, _print = print, _fail = f
         for key, selected in [("versions", versions), ("sources", sources)]
     ]
 
+    # A `matrix` turns one archive per (version, source) into a combination of
+    # archives: every combination is downloaded, and `output` decides which
+    # axes partition the extracted tree and which merge into it. Without a
+    # `matrix` there is exactly one combination with no properties, which is
+    # the pre-matrix behaviour.
+    matrix = index.get("matrix", [])
+    combos = Matrix.combos(matrix, _fail = _fail)
+    output = index.get("output", "")
+
+    def _contexts(version_name, source_name):
+        contexts = []
+
+        for combo in combos:
+            context = _materialize_context_v1(
+                repo_name,
+                version_name,
+                index["versions"][version_name],
+                source_name,
+                index["sources"][source_name],
+                matrix = matrix,
+                combo = combo,
+            )
+            contexts.append(struct(
+                # Subpath under `<version>/<source>/`. Combinations that
+                # render the same path merge into one tree.
+                output = output.format(**context) if output else "",
+                context = context,
+            ))
+
+        return contexts
+
+    def _repo(version_name, source_name):
+        contexts = _contexts(version_name, source_name)
+
+        return struct(
+            name = repo_name,
+            version = version_name,
+            source = source_name,
+            # The first combination's context, so that consumers that only
+            # need one representative context (URL reporting, strict integrity
+            # checks) keep working unchanged.
+            context = contexts[0].context,
+            contexts = contexts,
+        )
+
     repos = {
         version_name: [
-            struct(
-                name = repo_name,
-                version = version_name,
-                source = source_name,
-                context = _materialize_context_v1(
-                    repo_name,
-                    version_name,
-                    index["versions"][version_name],
-                    source_name,
-                    index["sources"][source_name],
-                ),
-            )
+            _repo(version_name, source_name)
             for source_name in selected_sources
         ]
         for version_name in selected_versions

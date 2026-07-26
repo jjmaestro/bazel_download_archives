@@ -64,3 +64,11 @@ download.archives(
     versions = ["1.24.5"],
 )
 use_repo(download, "wget_ext")
+
+# matrix: one archive per (triple, component) combination, partitioned by
+# triple so that each triple is a usable toolchain prefix of its own
+download.archives(
+    name = "rust_toolchain",
+    index = "//third-party/rust:repo.json",
+)
+use_repo(download, "rust_toolchain")

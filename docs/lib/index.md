@@ -18,6 +18,10 @@ The index JSON object has the following properties:
   be expanded to a `dict` of `version`s mapped to empty `version` contexts.
 - `sources` (`dict[source, source_context]`): maps `source` names to [URL
   `source` context]s.
+- `matrix` (`list[axis]`, optional): expands each `version` into a *combination
+  of archives* instead of a single one. See [`matrix`].
+- `output` (`str`, optional): template that decides the subpath each `matrix`
+  combination is extracted into. See [`output`: merging and partitioning].
 - `metadata` (`dict[any, any]`): free-form "metadata map", useful to add
   information about the archive that we want to have available in the repo
   (e.g. requirements, version compatibility, external dependencies, etc).
@@ -37,6 +41,10 @@ Each `repo` `struct` has the following properties:
   - `source`: the `source` name
   - `context`: the [`materialized` repo context] which will have, at the very
     least, the `url` from which to download the archive.
+  - `contexts`: the list of `struct(output, context)`, one per [`matrix`]
+    combination, each with the combination's `materialized` repo `context` and
+    its materialized `output` subpath. Without a `matrix` this is a
+    single-element list holding `context` and an empty `output`.
 
 ## Contexts
 
@@ -185,6 +193,117 @@ Note that *all* of the property values in the URL `source` context can be
 templated using string replacements. See [`materialized` repo context] for more
 details.
 
+
+## `matrix`
+
+Some archives are not published as *one* file per version but as a *set* of
+files. E.g. a toolchain publishes one archive per (target triple, component)
+and all of them together make up the toolchain.
+
+The `matrix` describes that set as an ordered list of *axes*:
+
+```json
+{
+  "version": 1,
+  "sources": {
+    "static.rust-lang.org": {
+      "url": "https://{source}/dist/{component}-{version}-{triple}.tar.xz",
+      "strip_prefix": "{component}-{version}-{triple}/{piece}"
+    }
+  },
+  "matrix": [
+    {
+      "key": "triple",
+      "values": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+    },
+    {
+      "key": "component",
+      "values": {
+        "cargo": {"piece": "cargo"},
+        "rust-std": {"piece": "rust-std-{triple}"},
+        "rustfmt": {"piece": "rustfmt-preview"}
+      }
+    }
+  ],
+  "output": "{triple}"
+}
+```
+
+Each axis is an object with two mandatory properties:
+
+- `key` (`str`): the name of the context property that the axis sets. The value
+  selected for the axis is available for string replacement as `{<key>}`.
+- `values` (`list[str] | dict[str, dict]`): the values of the axis. The `dict`
+  form maps each value to *extra context properties* that apply only when that
+  value is selected (`piece`, above, which is the sub-directory to strip
+  because it differs per component).
+
+The archive is downloaded once *per combination*, i.e. the cartesian product of
+all the axes, in matrix order and with the last axis varying fastest. Without a
+`matrix` there's exactly one combination with no properties, which is the
+pre-`matrix` behavior.
+
+### `matrix` combinations and the repo `context`
+
+The properties of a combination are added to the [`materialized` repo context]
+right after the [`default` context] and before the [`version` context] and the
+[URL `source` context], so both of those can reference them (e.g. the `url` and
+the `strip_prefix` above).
+
+They are materialized in axis order, so an axis can reference the axes before
+it: `rust-std`'s `piece` is `"rust-std-{triple}"` because `triple` is the first
+axis.
+
+### `matrix` integrity
+
+With a `matrix` there is one archive, and thus one integrity, per combination,
+so the [`version` context] nests the integrities by axis value, in matrix
+order:
+
+```json
+{
+  (...)
+  "versions": {
+    "1.97.1": {
+      "x86_64-unknown-linux-gnu": {
+        "cargo": "sha256-4b5Xkw2Cfk73/RSNy0jgUv/AqIsGpKKO9EhIOqvsG2E=",
+        "rust-std": "sha256-HB5wSugBJrfeNPcuooJffQFzbewgcy5aiibz3Ek5s74="
+      }
+    }
+  }
+}
+```
+
+As with the non-`matrix` [`version` context], the leaf is either the integrity
+itself ("global", the same archive in all sources) or a `dict` that maps each
+`source` to its integrity ("per-source").
+
+### `output`: merging and partitioning
+
+`output` is a template, materialized with each combination's context, that
+decides the subpath *under the archive's `<VERSION>/<SOURCE>` directory* into
+which that combination is extracted.
+
+Combinations that render the *same* `output` are extracted on top of each other
+and *merge* into a single tree; combinations that render *different* `output`s
+*partition* the tree. In the example above, `"output": "{triple}"` merges all
+the components of a triple into one usable toolchain prefix while keeping the
+two triples apart.
+
+Every rendered `output` also gets its own `filegroup` in the generated repo, so
+consumers can depend on one partition instead of on the whole tree.
+
+When `output` is not set, all combinations extract into the same directory,
+i.e. everything merges.
+
+Finally, note that a `source` is only used if *all* of its combinations
+download successfully. Otherwise, the next source is tried. This keeps a
+partial mirror from leaving behind a half-materialized tree.
+
+TODO: combinations are always downloaded eagerly, all of them, even in the
+per-version lazy mode of the `download_archives` module extension. Consider a
+hub-and-spoke layout with one download repo per combination so that e.g. only
+the triple that's actually built gets downloaded.
 
 ### Special context properties
 
@@ -385,6 +504,8 @@ And the final `materialized` context for e.g. version `1.1` and `source`
 [`default` context]: #default-context
 [`version` context]: #version-context
 [URL `source` context]: #url-source-context
+[`matrix`]: #matrix
+[`output`: merging and partitioning]: #output-merging-and-partitioning
 [Special context properties]: #special-context-properties
 [Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
 

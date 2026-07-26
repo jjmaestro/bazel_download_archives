@@ -13,6 +13,10 @@ def _get_dupes(list_):
         set_[value] = True
     return dupes
 
+def _dedupe(list_):
+    """Return the list without duplicates, keeping the first occurrences."""
+    return {value: None for value in list_}.keys()
+
 def _replace_in_place(d, k_replace, replacement, _fail = fail):
     """
     Replace a dict key with one or more k-v.
@@ -60,6 +64,7 @@ def _matching_patches(
     ]
 
 utils = struct(
+    dedupe = _dedupe,
     get_dupes = _get_dupes,
     replace_in_place = _replace_in_place,
     matching_patches = _matching_patches,

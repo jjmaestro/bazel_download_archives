@@ -11,6 +11,7 @@ load("@version_utils//spec:spec.bzl", Spec = "spec")
 load("@version_utils//version:version.bzl", Version = "version")
 load("//lib:download.bzl", Download = "download")
 load("//lib:index.bzl", Index = "index")
+load("//lib:utils.bzl", Utils = "utils")
 
 _DOC_INTRO = """
 This repository rule wraps [`rctx.download_and_extract`] and creates a Bazel
@@ -64,6 +65,9 @@ Each `//<VERSION>` package has three targets:
 - `:files`: to access all the files in the downloaded archive.
 - `:dir`: the path to the directory where the archive was extracted.
 - `:<VERSION>`: `alias` of `:files`.
+- `:<OUTPUT>`: one per subpath rendered by the index [`matrix`] `output`, to
+  access only the files of that partition of the extracted tree. There are
+  none of these when the index has no `matrix` or no `output`.
 
 and two constants:
 - `VERSION`: the version of the archive.
@@ -78,6 +82,8 @@ The root package `//` has three targets:
 - `:files`: to access all the files in the `DEFAULT_VERSION` package.
 - `:dir`: the path to the directory of the `DEFAULT_VERSION` package.
 - `:<NAME>`: `alias` of `:files`.
+- `:<OUTPUT>`: one per [`matrix`] `output` of the `DEFAULT_VERSION` package,
+  as above.
 
 and two constants:
 - `VERSION`: the `DEFAULT_VERSION` of the archive.
@@ -108,6 +114,7 @@ object" with the following properties:
 
 DOC_LINK_REFS = """
 ["Patching"]: #patching
+[`matrix`]: ../../lib/index.md#matrix
 [Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
 ["materialized repo `context`"]: ../../lib/index.md#materialized-repo-context
 [`rctx.download_and_extract`]: https://bazel.build/rules/lib/builtins/repository_ctx#download_and_extract
@@ -122,6 +129,85 @@ Users can also override the default selection of versions and sources with the
 
 Note that selecting specific versions and/or arguments will change the values
 of `VERSIONS` and `DEFAULT_VERSION`.
+"""
+
+_DOC_MATRIX = """
+### Downloading a `matrix` of archives
+
+Some archives are published as a *set* of files per version rather than as a
+single file, e.g. a toolchain that publishes one archive per (target triple,
+component). The index [`matrix`] describes that set, and the index `output`
+decides how the combinations lay out in the extracted tree: combinations that
+render the same `output` merge into a single tree, the rest partition it.
+
+E.g. this index downloads four archives for version `1.97.1`, one per
+(`triple`, `component`) combination, and partitions them by `triple`:
+
+```json
+{
+  "version": 1,
+  "sources": {
+    "static.rust-lang.org": {
+      "url": "https://{source}/dist/{component}-{version}-{triple}.tar.xz",
+      "strip_prefix": "{component}-{version}-{triple}/{piece}"
+    }
+  },
+  "matrix": [
+    {
+      "key": "triple",
+      "values": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+    },
+    {
+      "key": "component",
+      "values": {
+        "cargo": {"piece": "cargo"},
+        "rustfmt": {"piece": "rustfmt-preview"}
+      }
+    }
+  ],
+  "output": "{triple}",
+  "versions": {
+    "1.97.1": {
+      "x86_64-unknown-linux-gnu": {
+        "cargo": "sha256-4b5Xkw2Cfk73/RSNy0jgUv/AqIsGpKKO9EhIOqvsG2E=",
+        "rustfmt": "sha256-kH/pfWr73h7KGzTJksduFAbUIuLm8TeBPTgqzsfrTRQ="
+      },
+      "aarch64-unknown-linux-gnu": {
+        "cargo": "sha256-j3C8rM6lukvRh8P9TWTiRZK04Wr1E0lyAfWQnWFpHb4=",
+        "rustfmt": "sha256-Pb3hXTB5SSQZWuRG89LOtUKhMTBtIq55EsdjTUFGIqg="
+      }
+    }
+  }
+}
+```
+
+which lays out the repo as:
+
+```
+  @rust_toolchain/
+   |
+   |-- 1.97.1/
+   |   |-- BUILD.bazel
+   |   `-- static.rust-lang.org/
+   |       |-- BUILD.bazel
+   |       |-- aarch64-unknown-linux-gnu/
+   |       |   |-- bin/
+   |       |   `-- ...
+   |       `-- x86_64-unknown-linux-gnu/
+   |           |-- bin/
+   |           `-- ...
+   (...)
+```
+
+So, on top of `:files`, which is all of the combinations, each rendered
+`output` gets its own target:
+
+- `@rust_toolchain//1.97.1:x86_64-unknown-linux-gnu`
+- `@rust_toolchain//1.97.1:aarch64-unknown-linux-gnu`
+
+Note that the `cargo` and `rustfmt` archives of a triple *merge* into that
+triple's tree, giving one usable prefix with both binaries in `bin/`, while the
+two triples stay apart.
 """
 
 DOC_VERSION_SCHEME = """
@@ -436,6 +522,7 @@ in the index.
 _DOC = (
     _DOC_INTRO +
     _DOC_SELECTING +
+    _DOC_MATRIX +
     DOC_VERSION_SCHEME +
     DOC_PATCHING +
     _DOC_USAGE +
@@ -466,6 +553,24 @@ alias(
 alias(
     name = "{alias}",
     actual = ":files",
+)
+{outputs}"""
+
+# One target per `output` subpath rendered by the index `matrix`, so that
+# consumers can depend on one partition of the extracted tree instead of on
+# all of it. Without a `matrix`, or without an `output`, there are none of
+# these and ':files' is the only way in, as before.
+_BUILD_OUTPUT_FILEGROUP = """
+filegroup(
+    name = "{output}",
+    srcs = glob(["{output}/**"]),
+)
+"""
+
+_BUILD_OUTPUT_ALIAS = """
+alias(
+    name = "{output}",
+    actual = "{actual_prefix}:{output}",
 )
 """
 
@@ -538,7 +643,14 @@ alias(
     name = "{alias}",
     actual = ":files",
 )
-'''
+{outputs}'''
+
+def _build_outputs(template, outputs, **kwargs):
+    """Render one `template` block per `output`, in index `matrix` order."""
+    return "".join([
+        template.format(output = output, **kwargs)
+        for output in outputs
+    ])
 
 def _apparent_repo_name(rctx):
     # HACK to get the apparent repo name ("short name"). This should be
@@ -570,6 +682,7 @@ def _impl(rctx, _print = print, _fail = fail):
 
     lazy = rctx.attr.lazy
     repo_lock = {}
+    repo_outputs = {}
     failed_versions = []
 
     for version, repos in index.repos.items():
@@ -581,6 +694,14 @@ def _impl(rctx, _print = print, _fail = fail):
                 source = first_repo.source,
                 url = first_repo.context["url"],
                 integrity = first_repo.context.get("integrity", ""),
+                # The outputs don't depend on the source that ends up winning
+                # the download, so they can be rendered here, without knowing
+                # it, and aliased into the download repo.
+                outputs = Utils.dedupe([
+                    ctx.output
+                    for ctx in first_repo.contexts
+                    if ctx.output
+                ]),
                 patches = [],
             )
             actual_prefix = "@%s//%s" % (dl_repo_name, version)
@@ -612,9 +733,18 @@ def _impl(rctx, _print = print, _fail = fail):
 
             rctx.file(
                 "%s/%s/BUILD.bazel" % (version, dl.source),
-                _BUILD_SOURCE.format(alias = dl.source, version = version),
+                _BUILD_SOURCE.format(
+                    alias = dl.source,
+                    version = version,
+                    outputs = _build_outputs(
+                        _BUILD_OUTPUT_FILEGROUP,
+                        dl.outputs,
+                    ),
+                ),
                 executable = False,
             )
+
+        repo_outputs[version] = dl.outputs
 
         repo_lock[version] = dict(
             source = dl.source,
@@ -629,6 +759,11 @@ def _impl(rctx, _print = print, _fail = fail):
                 version = version,
                 actual_prefix = actual_prefix,
                 alias = version,
+                outputs = _build_outputs(
+                    _BUILD_OUTPUT_ALIAS,
+                    dl.outputs,
+                    actual_prefix = actual_prefix,
+                ),
             ),
             executable = False,
         )
@@ -651,6 +786,11 @@ def _impl(rctx, _print = print, _fail = fail):
             version = default_version,
             actual_prefix = actual_prefix,
             alias = repo_name,
+            outputs = _build_outputs(
+                _BUILD_OUTPUT_ALIAS,
+                repo_outputs[default_version],
+                actual_prefix = actual_prefix,
+            ),
         ),
         executable = False,
     )

@@ -1,0 +1,2 @@
+# `repo.json` is read by the `download_archives` module extension, from the
+# `//third-party/rust:repo.json` label in `MODULE.bazel`.

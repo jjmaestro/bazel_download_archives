@@ -1,12 +1,13 @@
 "repo JSON index schema"
 
 load(":integrity.bzl", Integrity = "integrity")
+load(":matrix.bzl", Matrix = "matrix")
 
 _INDEX_SCHEMA_KEYS = dict(
     v1 = dict(
         index = dict(
             mandatory = ["version", "sources", "versions"],
-            optional = ["metadata"],
+            optional = ["matrix", "metadata", "output"],
         ),
         sources = dict(
             mandatory = ["url"],
@@ -142,6 +143,47 @@ def _validate_integrities(repo_name, versions, sources, _print = print, _fail = 
             _print(msg.format(repo_name, version_name, missing))
 
 # buildifier: disable=return-value
+def _validate_matrix_integrities(
+        repo_name,
+        versions,
+        sources,
+        matrix,
+        _print = print,
+        _fail = fail):
+    """Validate the integrities nested by the `matrix` in every version."""
+    combos = Matrix.combos(matrix, _fail = _fail)
+
+    # testing
+    if _fail != fail and type(combos) != "list":
+        return combos
+
+    for version_name, version in versions.items():
+        missing = []
+
+        for combo in combos:
+            for source_name in sources:
+                integrity = Matrix.integrity(
+                    version,
+                    source_name,
+                    matrix,
+                    combo,
+                )
+
+                path = "/".join([Matrix.path(matrix, combo), source_name])
+
+                if not integrity:
+                    missing.append(path)
+                    continue
+
+                if not Integrity.is_valid(integrity):
+                    msg = "{}/{}/{}: invalid integrity: %r" % integrity
+                    return _fail(msg.format(repo_name, version_name, path))
+
+        if missing:
+            msg = "{}/{}: WARNING: missing integrity/sha256 for: {}"
+            _print(msg.format(repo_name, version_name, missing))
+
+# buildifier: disable=return-value
 def _validate_v1(repo_name, index, _print = print, _fail = fail):
     error = _validate_keys(repo_name, index, "v1", _fail = _fail)
 
@@ -172,6 +214,12 @@ def _validate_v1(repo_name, index, _print = print, _fail = fail):
             msg = "{}: invalid source name: '{}'"
             return _fail(msg.format(repo_name, source_name))
 
+    # With a `matrix`, the top-level keys of the version context that are
+    # values of its first axis are not version properties: they are the roots
+    # of the integrities nested by the matrix, validated separately below.
+    matrix = index.get("matrix", [])
+    axis_values = Matrix.axis_values(matrix)
+
     for version_name, version in index["versions"].items():
         # TODO: consider only allowing semantic versions
         if "/" in version_name:
@@ -180,7 +228,7 @@ def _validate_v1(repo_name, index, _print = print, _fail = fail):
 
         for property in version:
             # integrity validation is slightly different
-            if property in _INTEGRITY_PROPERTIES:
+            if property in _INTEGRITY_PROPERTIES or property in axis_values:
                 continue
 
             if property in _RESERVED_PROPERTIES:
@@ -199,13 +247,23 @@ def _validate_v1(repo_name, index, _print = print, _fail = fail):
                     return _fail(msg.format(repo_name, version_name, source_name))
 
     # Finally, validate the integrities
-    error = _validate_integrities(
-        repo_name,
-        index["versions"],
-        index["sources"],
-        _print = _print,
-        _fail = _fail,
-    )
+    if matrix:
+        error = _validate_matrix_integrities(
+            repo_name,
+            index["versions"],
+            index["sources"],
+            matrix,
+            _print = _print,
+            _fail = _fail,
+        )
+    else:
+        error = _validate_integrities(
+            repo_name,
+            index["versions"],
+            index["sources"],
+            _print = _print,
+            _fail = _fail,
+        )
 
     # testing
     if _fail != fail and error != None:

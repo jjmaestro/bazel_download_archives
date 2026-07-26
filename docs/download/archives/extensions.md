@@ -164,6 +164,7 @@ use_repo(download, "my_src", "my_src-18.1")
 ```
 
 ["Patching"]: #patching
+[`matrix`]: ../../lib/index.md#matrix
 [Subresource Integrity (SRI)]: https://w3c.github.io/webappsec-subresource-integrity/
 ["materialized repo `context`"]: ../../lib/index.md#materialized-repo-context
 [`rctx.download_and_extract`]: https://bazel.build/rules/lib/builtins/repository_ctx#download_and_extract

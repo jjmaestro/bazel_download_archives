@@ -24,11 +24,13 @@ def _mock_rctx(download_results):
     files = {}
     patches = []
     logs = []
+    calls = []
     call_idx = [0]
 
-    def _download_and_extract(**_kwargs):
+    def _download_and_extract(**kwargs):
         i = call_idx[0]
         call_idx[0] = i + 1
+        calls.append(kwargs)
         return download_results[i]
 
     def _file(path, content = "", **_kwargs):
@@ -38,6 +40,7 @@ def _mock_rctx(download_results):
         patches.append(label)
 
     return struct(
+        calls = calls,
         download_and_extract = _download_and_extract,
         file = _file,
         patch = _patch,
@@ -416,11 +419,165 @@ try_sources__strict_integrity_checked_test = unittest.make(
     _try_sources__strict_integrity_checked_impl,
 )
 
+def _make_matrix_repos(sources, outputs, version = "1.0"):
+    """Create repo structs with one `contexts` entry per matrix combination."""
+    return [
+        struct(
+            version = version,
+            source = source,
+            context = {
+                "integrity": "sha256-AAAA",
+                "url": "https://%s/%s.tar.gz" % (source, version),
+            },
+            contexts = [
+                struct(
+                    output = output,
+                    context = {
+                        "integrity": "sha256-AAAA",
+                        "url": "https://%s/%s/%s.tar.gz" % (
+                            source,
+                            output,
+                            version,
+                        ),
+                    },
+                )
+                for output in outputs
+            ],
+        )
+        for source in sources
+    ]
+
+_OK = struct(success = True, integrity = "sha256-AAAA", sha256 = "deadbeef")
+_KO = struct(success = False, integrity = "", sha256 = "")
+
+def _check_strict_integrity__matrix_per_combo_impl(ctx):
+    env = unittest.begin(ctx)
+
+    def _repo(integrities):
+        return struct(contexts = [
+            struct(output = output, context = {"integrity": integrity})
+            for output, integrity in integrities.items()
+        ])
+
+    # the sources agree on the first combination but not on the second: with
+    # a matrix, every combination is its own archive and its own comparison
+    repos = [
+        _repo({"amd64": "sha256-AAA", "arm64": "sha256-BBB"}),
+        _repo({"amd64": "sha256-AAA", "arm64": "sha256-CCC"}),
+    ]
+
+    errors = []
+    Download.check_strict_integrity(repos, "1.0", _fail = _mock_fail(errors))
+    asserts.equals(env, 1, len(errors))
+    asserts.true(env, "different integrities" in errors[0])
+
+    return unittest.end(env)
+
+check_strict_integrity__matrix_per_combo_test = unittest.make(
+    _check_strict_integrity__matrix_per_combo_impl,
+)
+
+def _try_sources__matrix_downloads_every_combo_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_matrix_repos(["github.com"], ["amd64", "arm64"])
+    rctx, files, _, _ = _mock_rctx([_OK, _OK])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+
+    # one download per combination, each extracted under its own `output`
+    asserts.equals(env, 2, len(rctx.calls))
+    asserts.equals(env, [
+        "1.0/github.com/amd64",
+        "1.0/github.com/arm64",
+    ], [call["output"] for call in rctx.calls])
+
+    # ... and one target per `output`, so consumers can pick a partition
+    asserts.equals(env, ["amd64", "arm64"], dl.outputs)
+
+    asserts.equals(env, "github.com", dl.source)
+    asserts.true(env, "1.0/source.bzl" in files)
+
+    return unittest.end(env)
+
+try_sources__matrix_downloads_every_combo_test = unittest.make(
+    _try_sources__matrix_downloads_every_combo_impl,
+)
+
+def _try_sources__matrix_merged_outputs_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # combinations that render the same `output` merge into one tree, so they
+    # are one target, not one per combination
+    repos = _make_matrix_repos(["github.com"], ["amd64", "amd64"])
+    rctx, _, _, _ = _mock_rctx([_OK, _OK])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+
+    asserts.equals(env, 2, len(rctx.calls))
+    asserts.equals(env, ["amd64"], dl.outputs)
+
+    return unittest.end(env)
+
+try_sources__matrix_merged_outputs_test = unittest.make(
+    _try_sources__matrix_merged_outputs_impl,
+)
+
+def _try_sources__matrix_partial_source_fails_over_impl(ctx):
+    env = unittest.begin(ctx)
+
+    outputs = ["amd64", "arm64", "riscv64"]
+    repos = _make_matrix_repos(["github.com", "gitlab.com"], outputs)
+
+    # the first source is missing one of the three combinations, so it's
+    # skipped entirely rather than leaving a half-materialized tree
+    rctx, _, _, _ = _mock_rctx([_OK, _KO, _OK, _OK, _OK])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+
+    asserts.equals(env, "gitlab.com", dl.source)
+    asserts.equals(env, outputs, dl.outputs)
+
+    # and the first source stops at the combination that failed
+    asserts.equals(env, [
+        "1.0/github.com/amd64",
+        "1.0/github.com/arm64",
+        "1.0/gitlab.com/amd64",
+        "1.0/gitlab.com/arm64",
+        "1.0/gitlab.com/riscv64",
+    ], [call["output"] for call in rctx.calls])
+
+    return unittest.end(env)
+
+try_sources__matrix_partial_source_fails_over_test = unittest.make(
+    _try_sources__matrix_partial_source_fails_over_impl,
+)
+
+def _try_sources__no_matrix_has_no_outputs_impl(ctx):
+    env = unittest.begin(ctx)
+
+    repos = _make_repos(["github.com"])
+    rctx, _, _, _ = _mock_rctx([_OK])
+
+    dl = Download.try_sources(rctx, "test", "1.0", repos)
+
+    # without a matrix there's one archive extracted at the root of the
+    # version/source directory and, thus, no per-`output` targets
+    asserts.equals(env, [], dl.outputs)
+    asserts.equals(env, ["1.0/github.com"], [c["output"] for c in rctx.calls])
+
+    return unittest.end(env)
+
+try_sources__no_matrix_has_no_outputs_test = unittest.make(
+    _try_sources__no_matrix_has_no_outputs_impl,
+)
+
 TEST_SUITE_NAME = "lib/download"
 
 TEST_SUITE_TESTS = {
     "apply_patch/rewrites_paths": apply_patch__rewrites_paths_test,
     "check_strict_integrity/all_same": check_strict_integrity__all_same_test,
+    "check_strict_integrity/matrix_per_combo": check_strict_integrity__matrix_per_combo_test,
     "check_strict_integrity/mismatch": check_strict_integrity__mismatch_test,
     "check_strict_integrity/mix": check_strict_integrity__mix_test,
     "check_strict_integrity/none": check_strict_integrity__none_test,
@@ -432,6 +589,10 @@ TEST_SUITE_TESTS = {
     "try_sources/all_fail_returns_none": try_sources__all_fail_returns_none_test,
     "try_sources/failover_to_second": try_sources__failover_to_second_test,
     "try_sources/first_success_wins": try_sources__first_success_wins_test,
+    "try_sources/matrix/downloads_every_combo": try_sources__matrix_downloads_every_combo_test,
+    "try_sources/matrix/merged_outputs": try_sources__matrix_merged_outputs_test,
+    "try_sources/matrix/no_matrix_has_no_outputs": try_sources__no_matrix_has_no_outputs_test,
+    "try_sources/matrix/partial_source_fails_over": try_sources__matrix_partial_source_fails_over_test,
     "try_sources/missing_integrity_warns": try_sources__missing_integrity_warns_test,
     "try_sources/output_path": try_sources__output_path_test,
     "try_sources/strict_integrity_checked": try_sources__strict_integrity_checked_test,

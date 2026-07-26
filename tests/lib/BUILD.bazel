@@ -1,6 +1,7 @@
 load(":download.bzl", download_test_suite = "test_suite")
 load(":index.bzl", index_test_suite = "test_suite")
 load(":integrity.bzl", integrity_test_suite = "test_suite")
+load(":matrix.bzl", matrix_test_suite = "test_suite")
 load(":schema.bzl", schema_test_suite = "test_suite")
 load(":utils.bzl", utils_test_suite = "test_suite")
 
@@ -9,6 +10,8 @@ download_test_suite()
 index_test_suite()
 
 integrity_test_suite()
+
+matrix_test_suite()
 
 schema_test_suite()
 

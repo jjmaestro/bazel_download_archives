@@ -23,18 +23,35 @@ exports_files(glob(
 ))
 '''
 
+def _contexts(repo):
+    """The repo's contexts, one per matrix combination (one without a matrix)."""
+    contexts = getattr(repo, "contexts", None)
+
+    if contexts != None:
+        return contexts
+
+    return [struct(output = "", context = repo.context)]
+
 def _check_strict_integrity(repos, version, _fail):
     """Fail if repos for a version have different integrity hashes."""
-    integrities = {
-        repo.context["integrity"]: None
-        for repo in repos
-        if repo.context.get("integrity", None) != None
-    }
+    contexts = [_contexts(repo) for repo in repos]
 
-    if len(integrities) >= 2:
-        msg = "Version {} has {} different integrities "
-        msg += "while strict_integrity=True"
-        return _fail(msg.format(version, len(integrities)))
+    # With a matrix, the sources have to agree combination by combination, so
+    # there's one comparison per combination and not just one for the version
+    combos = max([len(c) for c in contexts]) if contexts else 0
+
+    for combo in range(combos):
+        integrities = {
+            repo_contexts[combo].context["integrity"]: None
+            for repo_contexts in contexts
+            if combo < len(repo_contexts) and
+               repo_contexts[combo].context.get("integrity", None) != None
+        }
+
+        if len(integrities) >= 2:
+            msg = "Version {} has {} different integrities "
+            msg += "while strict_integrity=True"
+            return _fail(msg.format(version, len(integrities)))
 
     return None
 
@@ -152,21 +169,51 @@ def _try_sources(
 
     for repo in repos:
         repo_path = "%s/%s" % (version, repo.source)
-        download_args = _make_download_args(repo_path, repo.context, _print)
 
-        result = rctx.download_and_extract(
-            output = repo_path,
-            allow_fail = True,
-            **download_args
-        )
+        # A source provides every combination of the index `matrix` (just one
+        # when there is no matrix). Combinations whose `output` renders the
+        # same subpath merge into one extracted tree; the rest partition it.
+        # A source counts as usable only if ALL of its combinations download,
+        # so a partial mirror falls through to the next source rather than
+        # leaving a half-materialized tree.
+        result = None
+        results = []
 
-        if not result.success:
+        for combo in _contexts(repo):
+            combo_path = "/".join([repo_path, combo.output]) if combo.output else repo_path
+            download_args = _make_download_args(combo_path, combo.context, _print)
+
+            result = rctx.download_and_extract(
+                output = combo_path,
+                allow_fail = True,
+                **download_args
+            )
+
+            if not result.success:
+                break
+
+            results.append(struct(
+                path = combo_path,
+                output = combo.output,
+                context = combo.context,
+                result = result,
+            ))
+
+        if not result or not result.success:
             continue
 
-        if "integrity" not in repo.context:
+        for downloaded in results:
+            if "integrity" in downloaded.context:
+                continue
+
             msg = "{}/{}: WARNING: integrity missing. "
             msg += "Please add the integrity / sha256 to the index: {} / {}"
-            _print(msg.format(repo_name, repo_path, result.integrity, result.sha256))
+            _print(msg.format(
+                repo_name,
+                downloaded.path,
+                downloaded.result.integrity,
+                downloaded.result.sha256,
+            ))
 
         rctx.file(
             "%s/source.bzl" % version,
@@ -191,6 +238,7 @@ def _try_sources(
             integrity = result.integrity,
             sha256 = result.sha256,
             output = repo_path,
+            outputs = Utils.dedupe([d.output for d in results if d.output]),
             patches = matched_patches,
         )
 

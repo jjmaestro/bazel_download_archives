@@ -6,6 +6,7 @@ exports_files([
     "download.bzl",
     "index.bzl",
     "integrity.bzl",
+    "matrix.bzl",
     "schema.bzl",
     "utils.bzl",
 ])
@@ -37,10 +38,16 @@ bzl_library(
 )
 
 bzl_library(
+    name = "matrix",
+    srcs = ["matrix.bzl"],
+)
+
+bzl_library(
     name = "schema",
     srcs = ["schema.bzl"],
     deps = [
         ":integrity",
+        ":matrix",
     ],
 )
 
@@ -49,6 +56,7 @@ bzl_library(
     srcs = ["index.bzl"],
     deps = [
         ":integrity",
+        ":matrix",
         ":schema",
         ":utils",
     ],

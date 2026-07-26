@@ -165,6 +165,10 @@ cc_binary(
 
 - **Lazy per-version downloads**: only fetch what your build needs
 - **Multi-source failover**: mirrors tried in order, transparent to the build
+- **Archive [`matrix`]**: for versions published as a *set* of archives (e.g. a
+  toolchain, one archive per target triple and component), download every
+  combination and either merge them into one tree or partition it, one target
+  per partition
 - **Patching**: apply patches selectively by version and/or source using
   [version spec][patching] patterns (e.g. `>=1.24.5/*`, `<2.0.0/github.com`)
 - **Integrity checking**: [SRI hashes][Subresource Integrity (SRI)] per source
@@ -201,6 +205,21 @@ versions.
 Sources are tried in order. If a download fails, the next source is attempted.
 The download only fails if all sources are exhausted.
 
+### Archive `matrix`
+
+Some archives are published as a *set* of files per version rather than as a
+single file. The index [`matrix`] declares the axes of that set (e.g. `triple`
+and `component`) and the version is downloaded once per combination.
+
+The index `output` template then decides the subpath each combination is
+extracted into: combinations that render the same `output` *merge* into one
+tree, the rest *partition* it, and every rendered `output` gets a target of its
+own, e.g. `@rust_toolchain//1.97.1:x86_64-unknown-linux-gnu`.
+
+A source is only used if *all* of its combinations download, so a partial
+mirror falls through to the next source instead of leaving behind a
+half-materialized tree.
+
 ### Source tracking
 
 Each version's package includes a `source.bzl` file that exports `SOURCE` (the
@@ -232,6 +251,7 @@ See [CONTRIBUTING.md] for more info on how to work with this repo.
 [`download/archives` module extension]: docs/download/archives/extensions.md
 [`download/archives` repository rule]: docs/download/archives/repository.md
 [`lib/index`]: docs/lib/index.md
+[`matrix`]: docs/lib/index.md#matrix
 [`strict_integrity`]: docs/download/archives/repository.md
 [`version_utils`]: https://github.com/jjmaestro/bazel_version_utils
 [issues]: ../../issues
