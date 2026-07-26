@@ -65,9 +65,12 @@ TL;DR, the repo can be used as follows:
 The `archives` repository rule creates a `@<NAME>` Bazel repo with a
 public `//<VERSION>` package for every version in the index.
 
-Each `//<VERSION>` package has three targets:
+Each `//<VERSION>` package has the following targets:
 - `:files`: to access all the files in the downloaded archive.
-- `:dir`: the path to the directory where the archive was extracted.
+- `:dir`: the directory the archive was extracted into, as a tree artifact
+  keyed on the archive and its patches (see `//lib:dir.bzl`).
+- `:dir_path`: that same directory as Bazel extracted it, for its path alone
+  (see `//lib:dir.bzl` for why it is no good for its contents).
 - `:<VERSION>`: `alias` of `:files`.
 - `:<OUTPUT>`: one per subpath rendered by the index [`matrix`] `output`, to
   access only the files of that partition of the extracted tree. There are
@@ -82,9 +85,10 @@ the actual files from the downloaded archive for that specific `version` and
 `source`. The targets in the `//<VERSION>` package are aliases for targets in
 the `//<VERSION>/<SOURCE>` sub-packages.
 
-The root package `//` has three targets:
+The root package `//` has the following targets:
 - `:files`: to access all the files in the `DEFAULT_VERSION` package.
-- `:dir`: the path to the directory of the `DEFAULT_VERSION` package.
+- `:dir`: the directory of the `DEFAULT_VERSION` package, as above.
+- `:dir_path`: the path of that directory, as above.
 - `:<NAME>`: `alias` of `:files`.
 - `:<OUTPUT>`: one per [`matrix`] `output` of the `DEFAULT_VERSION` package,
   as above.
