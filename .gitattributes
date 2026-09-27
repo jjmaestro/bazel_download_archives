@@ -15,3 +15,6 @@
 # mark the docs (except README) as generated so they are collapsed in GH PRs
 docs/*.md linguist-generated=true
 docs/README.md linguist-generated=false
+
+# cmd.exe can fail to find goto labels in batch files with LF line endings
+*.bat text eol=crlf
