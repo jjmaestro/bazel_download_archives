@@ -13,7 +13,7 @@ bazel_dep(name = "platforms", version = "0.0.11", dev_dependency = True)
 bazel_dep(name = "rules_cc", version = "0.1.1", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
 bazel_dep(name = "stardoc", version = "0.8.1", dev_dependency = True)
-bazel_dep(name = "version_utils", version = "0.1.0", dev_dependency = True)
+bazel_dep(name = "version_utils", version = "0.1.1", dev_dependency = True)
 
 local_path_override(
     module_name = "download_archives",

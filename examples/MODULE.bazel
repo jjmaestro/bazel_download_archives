@@ -5,7 +5,7 @@ module(
 
 bazel_dep(name = "download_archives", version = "", dev_dependency = True)
 bazel_dep(name = "bazel_skylib", version = "1.7.1", dev_dependency = True)
-bazel_dep(name = "version_utils", version = "0.1.0", dev_dependency = True)
+bazel_dep(name = "version_utils", version = "0.1.1", dev_dependency = True)
 
 local_path_override(
     module_name = "download_archives",
